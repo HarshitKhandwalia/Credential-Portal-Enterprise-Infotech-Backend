@@ -2,8 +2,6 @@ from django.db import models
 
 # Create your models here.
 
-from django.db import models
-
 class EmployeeCredential(models.Model):
     STATUS_CHOICES = [
         ('not_invited', 'Not Invited'),
