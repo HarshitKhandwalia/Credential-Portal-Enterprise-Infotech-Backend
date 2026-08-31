@@ -5,13 +5,14 @@ from .models import EmployeeCredential
 class EmployeeCredentialSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(required=False, allow_blank=True, allow_null=True)
     phone = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    credential = serializers.CharField(read_only=True)
     formatted_created_at = serializers.SerializerMethodField()
 
     class Meta:
         model = EmployeeCredential
         fields = [
-            'id', 'name', 'status', 'email', 'phone', 
-            'primary_credential', 'secondary_credential', 
+            'id', 'name', 'membership_id', 'credential', 'status', 'email', 'phone',
+            'primary_credential', 'secondary_credential',
             'created_at', 'formatted_created_at'
         ]
 
