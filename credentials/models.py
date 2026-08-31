@@ -11,7 +11,8 @@ class EmployeeCredential(models.Model):
     ]
 
     PRIMARY_CREDENTIAL_CHOICES = [
-        ('QR / NFC', 'QR / NFC'),
+        ('QR', 'QR'),
+        ('NFC', 'NFC'),
     ]
 
     SECONDARY_CREDENTIAL_CHOICES = [
@@ -23,7 +24,7 @@ class EmployeeCredential(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='not_invited')
     email = models.EmailField(blank=True, null=True)
     phone = models.CharField(max_length=30, blank=True, null=True)
-    primary_credential = models.CharField(max_length=50, choices=PRIMARY_CREDENTIAL_CHOICES, default='QR / NFC')
+    primary_credential = models.CharField(max_length=50, choices=PRIMARY_CREDENTIAL_CHOICES, default='QR')
     secondary_credential = models.CharField(max_length=50, choices=SECONDARY_CREDENTIAL_CHOICES, default='Email')
     created_at = models.DateTimeField(auto_now_add=True)
 

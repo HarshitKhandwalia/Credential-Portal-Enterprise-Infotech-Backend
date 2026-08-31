@@ -17,14 +17,20 @@ class EmployeeCredentialSerializer(serializers.ModelSerializer):
         return obj.created_at.strftime("%m/%d/%Y, %I:%M %p")
 
     def validate_email(self, value):
+        if value in (None, ''):
+            return value
+
         normalized_email = value.strip().lower()
         email_regex = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
         if not re.match(email_regex, normalized_email):
             raise serializers.ValidationError("Enter a valid email address.")
-            
+
         return normalized_email
 
     def validate_phone(self, value):
+        if value in (None, ''):
+            return value
+
         cleaned_phone = re.sub(r'[\s\-\(\)]', '', value)
         phone_regex = r'^\+?[1-9]\d{6,14}$'
         if not re.match(phone_regex, cleaned_phone):
