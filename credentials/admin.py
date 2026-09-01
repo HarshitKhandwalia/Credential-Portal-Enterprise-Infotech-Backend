@@ -3,12 +3,12 @@ from .models import EmployeeCredential, ScanLog
 
 @admin.register(EmployeeCredential)
 class EmployeeCredentialAdmin(admin.ModelAdmin):
-    list_display = ['name', 'email', 'qr_code', 'is_attended', 'created_at']
-    search_fields = ['name', 'email', 'qr_code']
-    readonly_fields = ['created_at']
+    list_display = ['name', 'membership_id', 'credential', 'email', 'status', 'is_attended', 'created_at']
+    search_fields = ['name', 'membership_id', 'credential', 'email']
+    readonly_fields = ['credential', 'created_at']
 
 @admin.register(ScanLog)
 class ScanLogAdmin(admin.ModelAdmin):
-    list_display = ['qr_code', 'status', 'device_id', 'scanned_at']
-    search_fields = ['qr_code']
+    list_display = ['credential', 'employee', 'status', 'device_id', 'scanned_at']
+    search_fields = ['credential']
     readonly_fields = ['scanned_at']
