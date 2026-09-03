@@ -1,6 +1,9 @@
 import re
+
 from rest_framework import serializers
-from .models import EmployeeCredential
+
+from .models import EmployeeCredential, ScanLog
+
 
 class EmployeeCredentialSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(required=False, allow_blank=True, allow_null=True)
@@ -11,10 +14,21 @@ class EmployeeCredentialSerializer(serializers.ModelSerializer):
     class Meta:
         model = EmployeeCredential
         fields = [
-            'id', 'name', 'membership_id', 'credential', 'status', 'email', 'phone',
-            'primary_credential', 'secondary_credential',
-            'created_at', 'formatted_created_at'
+            'id',
+            'name',
+            'membership_id',
+            'credential',
+            'status',
+            'email',
+            'phone',
+            'primary_credential',
+            'secondary_credential',
+            'created_at',
+            'formatted_created_at',
+            'is_attended',
+            'attended_at',
         ]
+        read_only_fields = ['credential', 'is_attended', 'attended_at']
 
     def get_formatted_created_at(self, obj):
         return obj.created_at.strftime("%m/%d/%Y, %I:%M %p")
@@ -43,7 +57,9 @@ class EmployeeCredentialSerializer(serializers.ModelSerializer):
 
         phone_regex = r'^\+?[1-9]\d{6,14}$'
         if not re.match(phone_regex, cleaned_phone):
-            raise serializers.ValidationError("Enter a valid phone number with country code (e.g., +917981557871).")
+            raise serializers.ValidationError(
+                "Enter a valid phone number with country code (e.g., +917981557871)."
+            )
 
         return cleaned_phone
 
@@ -57,3 +73,15 @@ class EmployeeCredentialSerializer(serializers.ModelSerializer):
             )
 
         return attrs
+
+
+class ScanResponseSerializer(serializers.Serializer):
+    status = serializers.CharField()
+    message = serializers.CharField()
+    employee = EmployeeCredentialSerializer(required=False, allow_null=True)
+
+
+class ScanLogSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ScanLog
+        fields = ['id', 'credential', 'status', 'device_id', 'scanned_at']

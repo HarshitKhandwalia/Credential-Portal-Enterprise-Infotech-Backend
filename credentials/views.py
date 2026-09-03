@@ -1,10 +1,11 @@
+from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 from mailer import send_wallet_links_email
 
-from .models import EmployeeCredential
+from .models import EmployeeCredential, ScanLog
 from .serializers import EmployeeCredentialSerializer
 from .wallet_tokens import build_wallet_urls
 
@@ -85,3 +86,74 @@ def send_credential_invite(request, pk):
 
     serializer = EmployeeCredentialSerializer(employee)
     return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+def scan_credential(request):
+    """
+    Scan a 6-digit credential code for attendance.
+
+    Input: {"credential": "849201", "device_id": "gate-1"}
+    Returns: employee details + status (SUCCESS/DUPLICATE/NOT_FOUND/INVALID)
+    """
+    credential = str(request.data.get('credential', '')).strip()
+    device_id = request.data.get('device_id', None)
+
+    if not credential or not credential.isdigit() or len(credential) != 6:
+        return Response(
+            {'status': 'INVALID', 'message': 'Credential must be 6 digits', 'employee': None},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        employee = EmployeeCredential.objects.get(credential=credential)
+    except EmployeeCredential.DoesNotExist:
+        ScanLog.objects.create(
+            credential=credential,
+            status='NOT_FOUND',
+            device_id=device_id,
+        )
+        return Response(
+            {
+                'status': 'NOT_FOUND',
+                'message': 'No employee found with this credential',
+                'employee': None,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    if employee.is_attended:
+        ScanLog.objects.create(
+            employee=employee,
+            credential=credential,
+            status='DUPLICATE',
+            device_id=device_id,
+        )
+        return Response(
+            {
+                'status': 'DUPLICATE',
+                'message': 'This employee has already scanned',
+                'employee': EmployeeCredentialSerializer(employee).data,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    employee.is_attended = True
+    employee.attended_at = timezone.now()
+    employee.save(update_fields=['is_attended', 'attended_at'])
+
+    ScanLog.objects.create(
+        employee=employee,
+        credential=credential,
+        status='SUCCESS',
+        device_id=device_id,
+    )
+
+    return Response(
+        {
+            'status': 'SUCCESS',
+            'message': 'Attendance marked successfully',
+            'employee': EmployeeCredentialSerializer(employee).data,
+        },
+        status=status.HTTP_200_OK,
+    )

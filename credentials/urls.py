@@ -5,6 +5,7 @@ from .views import (
     EmployeeViewSet,
     generate_QR_passes,
     health_check,
+    scan_credential,
     send_credential_invite,
 )
 from .wallet_views import (
@@ -26,6 +27,7 @@ urlpatterns = [
         generate_QR_passes,
         name='generate-qr-passes',
     ),
+    path('credentials/scan/', scan_credential, name='scan-credential'),
     path('wallet/apple/<str:token>/', wallet_apple_detail, name='wallet-apple-detail'),
     path(
         'wallet/apple/<str:token>/generate/',
