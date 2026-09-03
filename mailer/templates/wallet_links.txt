@@ -1,0 +1,8 @@
+Hey {{ name | default: 'there' }},
+
+Greetings! Choose how you would like to add your digital pass:
+
+Apple Wallet: {{ apple_wallet_url | default: '#' }}
+Google Wallet: {{ google_wallet_url | default: '#' }}
+
+Open the link for your device, then tap the wallet button to add your pass.

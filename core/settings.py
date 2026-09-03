@@ -136,16 +136,19 @@ STORAGES = {
     },
 }
 
-EMAIL_BACKEND = _env(
-    'EMAIL_BACKEND',
-    'django.core.mail.backends.smtp.EmailBackend',
+TWILIO_API_KEY = _env('TWILIO_API_KEY')
+TWILIO_CLIENT_SECRET = _env('TWILIO_CLIENT_SECRET')
+TWILIO_FROM_EMAIL = _env('TWILIO_FROM_EMAIL')
+TWILIO_FROM_NAME = _env('TWILIO_FROM_NAME')
+
+APPLE_WALLET_BUTTON_PNG_URL = _env(
+    'APPLE_WALLET_BUTTON_PNG_URL',
+    'https://res.cloudinary.com/dlc0p1mey/image/upload/v1788378974/AppleButton_uopjju.svg',
 )
-EMAIL_HOST = _env('EMAIL_HOST', 'smtp.gmail.com')
-EMAIL_PORT = int(_env('EMAIL_PORT', '587'))
-EMAIL_USE_TLS = _env_bool('EMAIL_USE_TLS', 'True')
-EMAIL_HOST_USER = _env('EMAIL_HOST_USER')
-EMAIL_HOST_PASSWORD = _env('EMAIL_HOST_PASSWORD')
-DEFAULT_FROM_EMAIL = _env('DEFAULT_FROM_EMAIL')
+GOOGLE_WALLET_BUTTON_PNG_URL = _env(
+    'GOOGLE_WALLET_BUTTON_PNG_URL',
+    'https://res.cloudinary.com/dlc0p1mey/image/upload/v1788378976/GoogleButton_vthx5d.svg',
+)
 
 GOOGLE_PASS_SERVICE_URL = _env(
     'GOOGLE_PASS_SERVICE_URL',

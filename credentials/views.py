@@ -2,7 +2,8 @@ from rest_framework import status, viewsets
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from .email_service import send_wallet_links_email
+from mailer import send_wallet_links_email
+
 from .models import EmployeeCredential
 from .serializers import EmployeeCredentialSerializer
 from .wallet_tokens import build_wallet_urls
@@ -41,7 +42,12 @@ def generate_QR_passes(request, pk):
     wallet_urls = build_wallet_urls(employee)
 
     try:
-        send_wallet_links_email(employee, wallet_urls)
+        send_wallet_links_email(
+            to_email=employee.email,
+            name=employee.name,
+            apple_wallet_url=wallet_urls['apple'],
+            google_wallet_url=wallet_urls['google'],
+        )
     except Exception as exc:
         return Response(
             {
