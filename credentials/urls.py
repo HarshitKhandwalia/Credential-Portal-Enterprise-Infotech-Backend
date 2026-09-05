@@ -20,6 +20,8 @@ router.register(r'credentials', EmployeeViewSet, basename='credential')
 
 urlpatterns = [
     path('health/', health_check, name='health-check'),
+    # Must be before the router so "scan" is not treated as a credential pk.
+    path('credentials/scan/', scan_credential, name='scan-credential'),
     path('', include(router.urls)),
     path('credentials/<int:pk>/send/', send_credential_invite, name='send-credential'),
     path(
@@ -27,7 +29,6 @@ urlpatterns = [
         generate_QR_passes,
         name='generate-qr-passes',
     ),
-    path('credentials/scan/', scan_credential, name='scan-credential'),
     path('wallet/apple/<str:token>/', wallet_apple_detail, name='wallet-apple-detail'),
     path(
         'wallet/apple/<str:token>/generate/',
