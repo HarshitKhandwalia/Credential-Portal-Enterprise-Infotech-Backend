@@ -3,6 +3,40 @@ from django.db import models
 from .utils import generate_unique_credential
 
 
+class Chapter(models.Model):
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True, default='')
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
+class Session(models.Model):
+    STATUS_CHOICES = [
+        ('scheduled', 'Scheduled'),
+        ('completed', 'Completed'),
+        ('cancelled', 'Cancelled'),
+    ]
+
+    chapter = models.ForeignKey(Chapter, on_delete=models.CASCADE, related_name='sessions')
+    title = models.CharField(max_length=255, blank=True, default='')
+    starts_at = models.DateTimeField()
+    ends_at = models.DateTimeField()
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='scheduled')
+
+    class Meta:
+        ordering = ['-starts_at']
+
+    def __str__(self):
+        label = self.title or f'Session {self.pk}'
+        return f"{self.chapter.name} - {label}"
+
+
 class EmployeeCredential(models.Model):
     STATUS_CHOICES = [
         ('not_invited', 'Not Invited'),
@@ -29,6 +63,14 @@ class EmployeeCredential(models.Model):
     secondary_credential = models.CharField(max_length=50, choices=SECONDARY_CREDENTIAL_CHOICES, default='Email')
     created_at = models.DateTimeField(auto_now_add=True)
 
+    chapter = models.ForeignKey(
+        Chapter,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='members',
+    )
+
     is_attended = models.BooleanField(default=False)
     attended_at = models.DateTimeField(null=True, blank=True)
 
@@ -41,11 +83,36 @@ class EmployeeCredential(models.Model):
         return f"{self.name} - {self.credential}"
 
 
+class SessionAttendance(models.Model):
+    session = models.ForeignKey(Session, on_delete=models.CASCADE, related_name='attendances')
+    employee = models.ForeignKey(
+        EmployeeCredential,
+        on_delete=models.CASCADE,
+        related_name='session_attendances',
+    )
+    scanned_at = models.DateTimeField(auto_now_add=True)
+    device_id = models.CharField(max_length=100, null=True, blank=True)
+
+    class Meta:
+        ordering = ['-scanned_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['session', 'employee'],
+                name='unique_session_employee_attendance',
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.employee} @ {self.session_id}"
+
+
 class ScanLog(models.Model):
     STATUS_CHOICES = [
         ('SUCCESS', 'Success'),
         ('DUPLICATE', 'Duplicate'),
         ('NOT_FOUND', 'Not Found'),
+        ('WRONG_CHAPTER', 'Wrong Chapter'),
+        ('INVALID', 'Invalid'),
     ]
 
     employee = models.ForeignKey(
@@ -53,6 +120,13 @@ class ScanLog(models.Model):
         on_delete=models.CASCADE,
         null=True,
         blank=True,
+    )
+    session = models.ForeignKey(
+        Session,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='scan_logs',
     )
     credential = models.CharField(max_length=6)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES)

@@ -2,7 +2,9 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from .views import (
+    ChapterViewSet,
     EmployeeViewSet,
+    SessionViewSet,
     generate_QR_passes,
     health_check,
     scan_credential,
@@ -16,6 +18,8 @@ from .wallet_views import (
 )
 
 router = DefaultRouter()
+router.register(r'chapters', ChapterViewSet, basename='chapter')
+router.register(r'sessions', SessionViewSet, basename='session')
 router.register(r'credentials', EmployeeViewSet, basename='credential')
 
 urlpatterns = [
