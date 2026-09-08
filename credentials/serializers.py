@@ -38,6 +38,42 @@ class SessionSerializer(serializers.ModelSerializer):
         return attrs
 
 
+class RecurringSessionCreateSerializer(serializers.Serializer):
+    """
+    Create weekly sessions up front (same weekday as starts_at) until recurrence_end_date.
+    Cap: 10 sessions.
+    """
+
+    title = serializers.CharField(max_length=255, required=False, allow_blank=True, default='')
+    starts_at = serializers.DateTimeField()
+    ends_at = serializers.DateTimeField()
+    recurrence_end_date = serializers.DateField()
+    status = serializers.ChoiceField(
+        choices=Session.STATUS_CHOICES,
+        default='scheduled',
+        required=False,
+    )
+
+    def validate(self, attrs):
+        starts_at = attrs['starts_at']
+        ends_at = attrs['ends_at']
+        recurrence_end_date = attrs['recurrence_end_date']
+
+        if ends_at <= starts_at:
+            raise serializers.ValidationError(
+                {'ends_at': 'ends_at must be after starts_at.'}
+            )
+        if recurrence_end_date < starts_at.date():
+            raise serializers.ValidationError(
+                {
+                    'recurrence_end_date': (
+                        'recurrence_end_date must be on or after the start date.'
+                    )
+                }
+            )
+        return attrs
+
+
 class EmployeeCredentialSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(required=False, allow_blank=True, allow_null=True)
     phone = serializers.CharField(required=False, allow_blank=True, allow_null=True)

@@ -9,7 +9,13 @@ from .serializers import (
     ChapterSerializer,
     EmployeeCredentialSerializer,
     EmployeeSummarySerializer,
+    RecurringSessionCreateSerializer,
     SessionSerializer,
+)
+from .utils import (
+    MAX_RECURRING_SESSIONS,
+    format_session_title,
+    generate_weekly_occurrences,
 )
 from .wallet_tokens import build_wallet_urls
 
@@ -44,6 +50,69 @@ class ChapterViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         session = serializer.save(chapter=chapter)
         return Response(SessionSerializer(session).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'], url_path='sessions/recurring')
+    def recurring_sessions(self, request, pk=None):
+        """
+        Create weekly sessions up front (same weekday as starts_at) until recurrence_end_date.
+        Caps at 10 sessions. Titles are '{series title} — {date}'.
+        """
+        chapter = self.get_object()
+        serializer = RecurringSessionCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        try:
+            slots = list(
+                generate_weekly_occurrences(
+                    data['starts_at'],
+                    data['ends_at'],
+                    data['recurrence_end_date'],
+                    max_sessions=MAX_RECURRING_SESSIONS,
+                )
+            )
+        except ValueError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not slots:
+            return Response(
+                {'detail': 'No sessions fall within the given date range.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        series_title = data.get('title') or ''
+        session_status = data.get('status') or 'scheduled'
+        created = [
+            Session(
+                chapter=chapter,
+                title=format_session_title(series_title, slot_start),
+                starts_at=slot_start,
+                ends_at=slot_end,
+                status=session_status,
+            )
+            for slot_start, slot_end in slots
+        ]
+        Session.objects.bulk_create(created)
+
+        # bulk_create may not set PKs on all DBs the same way; reload for response.
+        created_ids = [s.pk for s in created if s.pk]
+        if created_ids:
+            sessions = Session.objects.filter(pk__in=created_ids).order_by('starts_at')
+        else:
+            # Fallback: match by chapter + starts_at window
+            sessions = Session.objects.filter(
+                chapter=chapter,
+                starts_at__in=[slot[0] for slot in slots],
+            ).order_by('starts_at')
+
+        return Response(
+            {
+                'count': sessions.count(),
+                'capped_at': MAX_RECURRING_SESSIONS,
+                'sessions': SessionSerializer(sessions, many=True).data,
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class SessionViewSet(viewsets.ModelViewSet):
