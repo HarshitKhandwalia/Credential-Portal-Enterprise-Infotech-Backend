@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Chapter, EmployeeCredential, ScanLog, Session, SessionAttendance
+from .models import Chapter, EmployeeCredential, ScanLog, Session, SessionAttendance, Visitor, Substitute
 
 
 @admin.register(Chapter)
@@ -47,3 +47,19 @@ class ScanLogAdmin(admin.ModelAdmin):
     search_fields = ['credential']
     list_filter = ['status']
     readonly_fields = ['scanned_at']
+
+
+@admin.register(Visitor)
+class VisitorAdmin(admin.ModelAdmin):
+    list_display = ['name', 'member', 'session', 'credential', 'status', 'scanned_at', 'created_at']
+    search_fields = ['name', 'credential', 'member__name']
+    list_filter = ['status', 'session', 'created_at']
+    readonly_fields = ['credential', 'created_at', 'scanned_at']
+
+
+@admin.register(Substitute)
+class SubstituteAdmin(admin.ModelAdmin):
+    list_display = ['name', 'member', 'session', 'credential', 'status', 'scanned_at', 'created_at']
+    search_fields = ['name', 'credential', 'member__name']
+    list_filter = ['status', 'session', 'created_at']
+    readonly_fields = ['credential', 'created_at', 'scanned_at']

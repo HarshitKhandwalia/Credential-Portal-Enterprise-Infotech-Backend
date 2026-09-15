@@ -138,3 +138,83 @@ class ScanLog(models.Model):
 
     def __str__(self):
         return f"{self.credential} - {self.status}"
+class Visitor(models.Model):
+    STATUS_CHOICES = [
+        ('active', 'Active'),
+        ('scanned', 'Scanned'),
+        ('cancelled', 'Cancelled'),
+    ]
+
+    session = models.ForeignKey(Session, on_delete=models.CASCADE, related_name='visitors')
+    member = models.ForeignKey(
+        EmployeeCredential,
+        on_delete=models.CASCADE,
+        related_name='issued_visitors',
+    )
+    
+    name = models.CharField(max_length=255)
+    email = models.EmailField(blank=True, null=True)
+    phone = models.CharField(max_length=30, blank=True, null=True)
+    credential = models.CharField(max_length=6, unique=True, editable=False)
+    
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
+    scanned_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['session', 'member', 'name'],
+                name='unique_visitor_per_session_member',
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self.credential:
+            self.credential = generate_unique_credential()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"Visitor: {self.name} ({self.member.name})"
+
+
+class Substitute(models.Model):
+    STATUS_CHOICES = [
+        ('active', 'Active'),
+        ('scanned', 'Scanned'),
+        ('cancelled', 'Cancelled'),
+    ]
+
+    session = models.ForeignKey(Session, on_delete=models.CASCADE, related_name='substitutes')
+    member = models.ForeignKey(
+        EmployeeCredential,
+        on_delete=models.CASCADE,
+        related_name='issued_substitutes',
+    )
+    
+    name = models.CharField(max_length=255)
+    email = models.EmailField(blank=True, null=True)
+    phone = models.CharField(max_length=30, blank=True, null=True)
+    credential = models.CharField(max_length=6, unique=True, editable=False)
+    
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
+    scanned_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['session', 'member', 'name'],
+                name='unique_substitute_per_session_member',
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self.credential:
+            self.credential = generate_unique_credential()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"Substitute: {self.name} ({self.member.name})"

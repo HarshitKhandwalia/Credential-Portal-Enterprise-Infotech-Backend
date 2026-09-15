@@ -194,3 +194,42 @@ class ScanLogSerializer(serializers.ModelSerializer):
     class Meta:
         model = ScanLog
         fields = ['id', 'credential', 'status', 'device_id', 'session', 'scanned_at']
+
+class VisitorSerializer(serializers.ModelSerializer):
+    member_name = serializers.CharField(source='member.name', read_only=True)
+    formatted_created_at = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Visitor
+        fields = [
+            'id', 'session', 'member', 'member_name', 'name', 'email', 'phone',
+            'credential', 'status', 'scanned_at', 'created_at', 'formatted_created_at'
+        ]
+        read_only_fields = ['credential', 'scanned_at', 'created_at']
+
+    def get_formatted_created_at(self, obj):
+        return obj.created_at.strftime("%m/%d/%Y, %I:%M %p")
+
+
+class SubstituteSerializer(serializers.ModelSerializer):
+    member_name = serializers.CharField(source='member.name', read_only=True)
+    formatted_created_at = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Substitute
+        fields = [
+            'id', 'session', 'member', 'member_name', 'name', 'email', 'phone',
+            'credential', 'status', 'scanned_at', 'created_at', 'formatted_created_at'
+        ]
+        read_only_fields = ['credential', 'scanned_at', 'created_at']
+
+    def get_formatted_created_at(self, obj):
+        return obj.created_at.strftime("%m/%d/%Y, %I:%M %p")
+
+
+class VisitorSubstituteCreateSerializer(serializers.Serializer):
+    """Create visitor or substitute"""
+    type = serializers.ChoiceField(choices=['visitor', 'substitute'])
+    name = serializers.CharField(max_length=255)
+    email = serializers.EmailField(required=False, allow_blank=True, allow_null=True)
+    phone = serializers.CharField(required=False, allow_blank=True, allow_null=True)

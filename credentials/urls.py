@@ -9,6 +9,9 @@ from .views import (
     health_check,
     scan_credential,
     send_credential_invite,
+    create_visitor_substitute,
+    list_session_visitors_substitutes,
+    scan_visitor_substitute,
 )
 from .wallet_views import (
     wallet_apple_detail,
@@ -32,6 +35,22 @@ urlpatterns = [
         'credentials/<int:pk>/generate-qr-passes/',
         generate_QR_passes,
         name='generate-qr-passes',
+    ),
+    # Visitor & Substitute routes
+    path(
+        'sessions/<int:session_id>/visitor-substitute/create/',
+        create_visitor_substitute,
+        name='create-visitor-substitute',
+    ),
+    path(
+        'sessions/<int:session_id>/visitor-substitute/list/',
+        list_session_visitors_substitutes,
+        name='list-visitor-substitute',
+    ),
+    path(
+        'sessions/<int:session_id>/visitor-substitute/scan/<str:credential>/',
+        scan_visitor_substitute,
+        name='scan-visitor-substitute',
     ),
     path('wallet/apple/<str:token>/', wallet_apple_detail, name='wallet-apple-detail'),
     path(

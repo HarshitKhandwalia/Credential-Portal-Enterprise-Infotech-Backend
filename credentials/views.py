@@ -347,3 +347,139 @@ def scan_credential(request):
         },
         status=status.HTTP_200_OK,
     )
+@api_view(['POST'])
+def create_visitor_substitute(request, session_id):
+    """
+    Create a visitor or substitute for a session
+    Input: {"type": "visitor"|"substitute", "name": "...", "email": "...", "phone": "..."}
+    """
+    try:
+        session = Session.objects.get(id=session_id)
+    except Session.DoesNotExist:
+        return Response({'error': 'Session not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    serializer = VisitorSubstituteCreateSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    visitor_type = serializer.validated_data['type']
+    name = serializer.validated_data['name']
+    email = serializer.validated_data.get('email')
+    phone = serializer.validated_data.get('phone')
+
+    # Get member from request (who is issuing this)
+    member_id = request.data.get('member_id')
+    if not member_id:
+        return Response({'error': 'member_id required'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        member = EmployeeCredential.objects.get(id=member_id)
+    except EmployeeCredential.DoesNotExist:
+        return Response({'error': 'Member not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    try:
+        if visitor_type == 'visitor':
+            obj = Visitor.objects.create(
+                session=session,
+                member=member,
+                name=name,
+                email=email,
+                phone=phone,
+            )
+            serializer = VisitorSerializer(obj)
+        else:  # substitute
+            obj = Substitute.objects.create(
+                session=session,
+                member=member,
+                name=name,
+                email=email,
+                phone=phone,
+            )
+            serializer = SubstituteSerializer(obj)
+
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['GET'])
+def list_session_visitors_substitutes(request, session_id):
+    """List all visitors and substitutes for a session"""
+    try:
+        session = Session.objects.get(id=session_id)
+    except Session.DoesNotExist:
+        return Response({'error': 'Session not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    visitors = Visitor.objects.filter(session=session)
+    substitutes = Substitute.objects.filter(session=session)
+
+    return Response({
+        'visitors': VisitorSerializer(visitors, many=True).data,
+        'substitutes': SubstituteSerializer(substitutes, many=True).data,
+    })
+
+
+@api_view(['PATCH'])
+def scan_visitor_substitute(request, session_id, credential):
+    """
+    Scan a visitor or substitute credential
+    Input: {"device_id": "gate-1"}
+    """
+    from django.utils import timezone
+
+    try:
+        session = Session.objects.get(id=session_id)
+    except Session.DoesNotExist:
+        return Response({'error': 'Session not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    device_id = request.data.get('device_id', None)
+
+    # Try visitor first
+    visitor = Visitor.objects.filter(session=session, credential=credential).first()
+    if visitor:
+        if visitor.status == 'scanned':
+            return Response({
+                'status': 'DUPLICATE',
+                'message': 'This visitor has already scanned',
+                'type': 'visitor',
+                'data': VisitorSerializer(visitor).data,
+            })
+
+        visitor.status = 'scanned'
+        visitor.scanned_at = timezone.now()
+        visitor.save()
+
+        return Response({
+            'status': 'SUCCESS',
+            'message': 'Visitor attendance marked',
+            'type': 'visitor',
+            'data': VisitorSerializer(visitor).data,
+        })
+
+    # Try substitute
+    substitute = Substitute.objects.filter(session=session, credential=credential).first()
+    if substitute:
+        if substitute.status == 'scanned':
+            return Response({
+                'status': 'DUPLICATE',
+                'message': 'This substitute has already scanned',
+                'type': 'substitute',
+                'data': SubstituteSerializer(substitute).data,
+            })
+
+        substitute.status = 'scanned'
+        substitute.scanned_at = timezone.now()
+        substitute.save()
+
+        return Response({
+            'status': 'SUCCESS',
+            'message': 'Substitute attendance marked',
+            'type': 'substitute',
+            'data': SubstituteSerializer(substitute).data,
+        })
+
+    # Not found
+    return Response({
+        'status': 'NOT_FOUND',
+        'message': 'Visitor or substitute not found',
+    }, status=status.HTTP_404_NOT_FOUND)
