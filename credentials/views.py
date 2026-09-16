@@ -140,31 +140,65 @@ class SessionViewSet(viewsets.ModelViewSet):
     serializer_class = SessionSerializer
     http_method_names = ['get', 'patch', 'put', 'delete', 'head', 'options']
 
-    @action(detail=True, methods=['get'], url_path='report')
-    def report(self, request, pk=None):
-        session = self.get_object()
-        members = list(
-            EmployeeCredential.objects.filter(chapter_id=session.chapter_id).order_by('name')
-        )
-        attended_qs = (
-            SessionAttendance.objects.filter(session=session)
-            .select_related('employee')
-            .order_by('scanned_at')
-        )
-        attended_employees = [row.employee for row in attended_qs]
-        attended_ids = {emp.pk for emp in attended_employees}
-        absent_employees = [emp for emp in members if emp.pk not in attended_ids]
+@action(detail=True, methods=['get'], url_path='report')
+def report(self, request, pk=None):
+    from django.utils import timezone
+    session = self.get_object()
+    
+    # Get members
+    members = list(
+        EmployeeCredential.objects.filter(chapter_id=session.chapter_id).order_by('name')
+    )
+    attended_members_qs = (
+        SessionAttendance.objects.filter(session=session)
+        .select_related('employee')
+        .order_by('scanned_at')
+    )
+    attended_members = [row.employee for row in attended_members_qs]
+    attended_member_ids = {emp.pk for emp in attended_members}
+    absent_members = [emp for emp in members if emp.pk not in attended_member_ids]
 
-        return Response(
-            {
-                'session': SessionSerializer(session).data,
-                'expected_count': len(members),
-                'attended_count': len(attended_employees),
-                'absent_count': len(absent_employees),
-                'attended': EmployeeSummarySerializer(attended_employees, many=True).data,
-                'absent': EmployeeSummarySerializer(absent_employees, many=True).data,
-            }
-        )
+    # Get visitors
+    all_visitors = list(Visitor.objects.filter(session=session).order_by('name'))
+    attended_visitors = [v for v in all_visitors if v.status == 'scanned']
+    absent_visitors = [v for v in all_visitors if v.status == 'active']
+
+    # Get substitutes
+    all_substitutes = list(Substitute.objects.filter(session=session).order_by('name'))
+    attended_substitutes = [s for s in all_substitutes if s.status == 'scanned']
+    absent_substitutes = [s for s in all_substitutes if s.status == 'active']
+
+    return Response(
+        {
+            'session': SessionSerializer(session).data,
+            'summary': {
+                'total_expected': len(members) + len(all_visitors) + len(all_substitutes),
+                'total_attended': len(attended_members) + len(attended_visitors) + len(attended_substitutes),
+                'total_absent': len(absent_members) + len(absent_visitors) + len(absent_substitutes),
+            },
+            'members': {
+                'count': len(members),
+                'attended_count': len(attended_members),
+                'absent_count': len(absent_members),
+                'attended': EmployeeSummarySerializer(attended_members, many=True).data,
+                'absent': EmployeeSummarySerializer(absent_members, many=True).data,
+            },
+            'visitors': {
+                'count': len(all_visitors),
+                'attended_count': len(attended_visitors),
+                'absent_count': len(absent_visitors),
+                'attended': VisitorSerializer(attended_visitors, many=True).data,
+                'absent': VisitorSerializer(absent_visitors, many=True).data,
+            },
+            'substitutes': {
+                'count': len(all_substitutes),
+                'attended_count': len(attended_substitutes),
+                'absent_count': len(absent_substitutes),
+                'attended': SubstituteSerializer(attended_substitutes, many=True).data,
+                'absent': SubstituteSerializer(absent_substitutes, many=True).data,
+            },
+        }
+    )
 
 
 class EmployeeViewSet(viewsets.ModelViewSet):
