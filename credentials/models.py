@@ -159,6 +159,7 @@ class Visitor(models.Model):
     
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
     scanned_at = models.DateTimeField(null=True, blank=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -200,6 +201,7 @@ class Substitute(models.Model):
     
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
     scanned_at = models.DateTimeField(null=True, blank=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

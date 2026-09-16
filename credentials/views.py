@@ -1,23 +1,43 @@
+from django.db.models import Prefetch
+from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 
 from mailer import send_wallet_links_email
 
-from .models import Chapter, EmployeeCredential, ScanLog, Session, SessionAttendance
+from .models import (
+    Chapter,
+    EmployeeCredential,
+    ScanLog,
+    Session,
+    SessionAttendance,
+    Substitute,
+    Visitor,
+)
 from .serializers import (
     ChapterSerializer,
+    EmployeeCredentialListSerializer,
     EmployeeCredentialSerializer,
     EmployeeSummarySerializer,
     RecurringSessionCreateSerializer,
     SessionSerializer,
+    SubstituteSerializer,
+    VisitorSerializer,
+    VisitorSubstituteCreateSerializer,
+    VisitorSubstituteSendSerializer,
 )
 from .utils import (
     MAX_RECURRING_SESSIONS,
     format_session_title,
     generate_weekly_occurrences,
 )
-from .wallet_tokens import build_wallet_urls
+from .wallet_tokens import (
+    PASS_KIND_SUBSTITUTE,
+    PASS_KIND_VISITOR,
+    build_employee_wallet_urls,
+    build_wallet_urls,
+)
 
 
 @api_view(['GET'])
@@ -151,6 +171,26 @@ class EmployeeViewSet(viewsets.ModelViewSet):
     queryset = EmployeeCredential.objects.select_related('chapter').all().order_by('-created_at')
     serializer_class = EmployeeCredentialSerializer
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if self.action == 'list':
+            qs = qs.prefetch_related(
+                Prefetch(
+                    'issued_visitors',
+                    queryset=Visitor.objects.select_related('session', 'member').order_by('-created_at'),
+                ),
+                Prefetch(
+                    'issued_substitutes',
+                    queryset=Substitute.objects.select_related('session', 'member').order_by('-created_at'),
+                ),
+            )
+        return qs
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return EmployeeCredentialListSerializer
+        return EmployeeCredentialSerializer
+
 
 def get_view_name(self):
     return "Credentials list"
@@ -172,7 +212,7 @@ def generate_QR_passes(request, pk):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    wallet_urls = build_wallet_urls(employee)
+    wallet_urls = build_employee_wallet_urls(employee)
 
     try:
         send_wallet_links_email(
@@ -225,8 +265,9 @@ def scan_credential(request):
     """
     Scan a 6-digit credential for a specific session.
 
+    Tries member first, then visitor, then substitute for the session.
+
     Input: {"credential": "849201", "session_id": 12, "device_id": "gate-1"}
-    Returns: employee details + status
     """
     credential = str(request.data.get('credential', '')).strip()
     device_id = request.data.get('device_id', None)
@@ -237,7 +278,9 @@ def scan_credential(request):
             {
                 'status': 'INVALID',
                 'message': 'Credential must be 6 digits',
+                'type': None,
                 'employee': None,
+                'data': None,
             },
             status=status.HTTP_400_BAD_REQUEST,
         )
@@ -247,7 +290,9 @@ def scan_credential(request):
             {
                 'status': 'INVALID',
                 'message': 'session_id is required',
+                'type': None,
                 'employee': None,
+                'data': None,
             },
             status=status.HTTP_400_BAD_REQUEST,
         )
@@ -259,7 +304,9 @@ def scan_credential(request):
             {
                 'status': 'INVALID',
                 'message': 'Session not found',
+                'type': None,
                 'employee': None,
+                'data': None,
             },
             status=status.HTTP_400_BAD_REQUEST,
         )
@@ -269,29 +316,44 @@ def scan_credential(request):
             {
                 'status': 'INVALID',
                 'message': 'Session is cancelled',
+                'type': None,
                 'employee': None,
+                'data': None,
             },
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    try:
-        employee = EmployeeCredential.objects.select_related('chapter').get(credential=credential)
-    except EmployeeCredential.DoesNotExist:
-        ScanLog.objects.create(
-            credential=credential,
-            status='NOT_FOUND',
-            device_id=device_id,
-            session=session,
-        )
-        return Response(
-            {
-                'status': 'NOT_FOUND',
-                'message': 'No employee found with this credential',
-                'employee': None,
-            },
-            status=status.HTTP_200_OK,
-        )
+    employee = (
+        EmployeeCredential.objects.select_related('chapter')
+        .filter(credential=credential)
+        .first()
+    )
+    if employee is not None:
+        return _scan_member(employee, session, credential, device_id)
 
+    visitor_or_sub_response = _scan_visitor_or_substitute(session, credential, device_id)
+    if visitor_or_sub_response is not None:
+        return visitor_or_sub_response
+
+    ScanLog.objects.create(
+        credential=credential,
+        status='NOT_FOUND',
+        device_id=device_id,
+        session=session,
+    )
+    return Response(
+        {
+            'status': 'NOT_FOUND',
+            'message': 'No member, visitor, or substitute found with this credential',
+            'type': None,
+            'employee': None,
+            'data': None,
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
+def _scan_member(employee, session, credential, device_id):
     if not employee.chapter_id or employee.chapter_id != session.chapter_id:
         ScanLog.objects.create(
             employee=employee,
@@ -304,7 +366,9 @@ def scan_credential(request):
             {
                 'status': 'WRONG_CHAPTER',
                 'message': 'Employee is not a member of this session chapter',
+                'type': 'member',
                 'employee': EmployeeCredentialSerializer(employee).data,
+                'data': None,
             },
             status=status.HTTP_200_OK,
         )
@@ -321,7 +385,9 @@ def scan_credential(request):
             {
                 'status': 'DUPLICATE',
                 'message': 'This employee has already scanned for this session',
+                'type': 'member',
                 'employee': EmployeeCredentialSerializer(employee).data,
+                'data': None,
             },
             status=status.HTTP_200_OK,
         )
@@ -343,10 +409,108 @@ def scan_credential(request):
         {
             'status': 'SUCCESS',
             'message': 'Attendance marked successfully',
+            'type': 'member',
             'employee': EmployeeCredentialSerializer(employee).data,
+            'data': None,
         },
         status=status.HTTP_200_OK,
     )
+
+
+def _scan_visitor_or_substitute(session, credential, device_id):
+    visitor = Visitor.objects.filter(session=session, credential=credential).first()
+    if visitor is not None:
+        return _mark_visitor_or_substitute_scan(
+            entry=visitor,
+            entry_type='visitor',
+            session=session,
+            credential=credential,
+            device_id=device_id,
+            serializer_class=VisitorSerializer,
+        )
+
+    substitute = Substitute.objects.filter(session=session, credential=credential).first()
+    if substitute is not None:
+        return _mark_visitor_or_substitute_scan(
+            entry=substitute,
+            entry_type='substitute',
+            session=session,
+            credential=credential,
+            device_id=device_id,
+            serializer_class=SubstituteSerializer,
+        )
+
+    return None
+
+
+def _mark_visitor_or_substitute_scan(
+    *,
+    entry,
+    entry_type,
+    session,
+    credential,
+    device_id,
+    serializer_class,
+):
+    if entry.status == 'cancelled':
+        ScanLog.objects.create(
+            credential=credential,
+            status='INVALID',
+            device_id=device_id,
+            session=session,
+        )
+        return Response(
+            {
+                'status': 'INVALID',
+                'message': f'This {entry_type} pass is cancelled',
+                'type': entry_type,
+                'employee': None,
+                'data': serializer_class(entry).data,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    if entry.status == 'scanned':
+        ScanLog.objects.create(
+            credential=credential,
+            status='DUPLICATE',
+            device_id=device_id,
+            session=session,
+        )
+        return Response(
+            {
+                'status': 'DUPLICATE',
+                'message': f'This {entry_type} has already scanned',
+                'type': entry_type,
+                'employee': None,
+                'data': serializer_class(entry).data,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    entry.status = 'scanned'
+    entry.scanned_at = timezone.now()
+    entry.save(update_fields=['status', 'scanned_at'])
+
+    ScanLog.objects.create(
+        credential=credential,
+        status='SUCCESS',
+        device_id=device_id,
+        session=session,
+    )
+
+    return Response(
+        {
+            'status': 'SUCCESS',
+            'message': f'{entry_type.capitalize()} attendance marked',
+            'type': entry_type,
+            'employee': None,
+            'data': serializer_class(entry).data,
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
 @api_view(['POST'])
 def create_visitor_substitute(request, session_id):
     """
@@ -402,21 +566,118 @@ def create_visitor_substitute(request, session_id):
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
-@api_view(['GET'])
-def list_session_visitors_substitutes(request, session_id):
-    """List all visitors and substitutes for a session"""
+@api_view(['POST'])
+def send_visitor_substitute_passes(request, session_id, pk):
+    """
+    Email Apple/Google wallet links for a visitor or substitute.
+    Body: {"type": "visitor"|"substitute"}
+    """
     try:
         session = Session.objects.get(id=session_id)
     except Session.DoesNotExist:
         return Response({'error': 'Session not found'}, status=status.HTTP_404_NOT_FOUND)
 
-    visitors = Visitor.objects.filter(session=session)
-    substitutes = Substitute.objects.filter(session=session)
+    serializer = VisitorSubstituteSendSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    return Response({
-        'visitors': VisitorSerializer(visitors, many=True).data,
-        'substitutes': SubstituteSerializer(substitutes, many=True).data,
-    })
+    entry_type = serializer.validated_data['type']
+
+    if entry_type == 'visitor':
+        try:
+            entry = Visitor.objects.get(pk=pk, session=session)
+        except Visitor.DoesNotExist:
+            return Response({'error': 'Visitor not found'}, status=status.HTTP_404_NOT_FOUND)
+        pass_kind = PASS_KIND_VISITOR
+        response_serializer = VisitorSerializer
+    else:
+        try:
+            entry = Substitute.objects.get(pk=pk, session=session)
+        except Substitute.DoesNotExist:
+            return Response({'error': 'Substitute not found'}, status=status.HTTP_404_NOT_FOUND)
+        pass_kind = PASS_KIND_SUBSTITUTE
+        response_serializer = SubstituteSerializer
+
+    if not entry.email:
+        return Response(
+            {'error': 'Email is required to send wallet links.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    wallet_urls = build_wallet_urls(pass_kind, entry.pk)
+
+    try:
+        send_wallet_links_email(
+            to_email=entry.email,
+            name=entry.name,
+            apple_wallet_url=wallet_urls['apple'],
+            google_wallet_url=wallet_urls['google'],
+        )
+    except Exception as exc:
+        return Response(
+            {
+                'error': f'Failed to send wallet email: {exc}',
+                'type': entry_type,
+                'id': entry.pk,
+                'wallet_urls': wallet_urls,
+            },
+            status=status.HTTP_502_BAD_GATEWAY,
+        )
+
+    entry.sent_at = timezone.now()
+    entry.save(update_fields=['sent_at'])
+
+    return Response(
+        {
+            'type': entry_type,
+            'id': entry.pk,
+            'email_sent': True,
+            'wallet_urls': wallet_urls,
+            'data': response_serializer(entry).data,
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
+@api_view(['DELETE'])
+def delete_visitor_substitute(request, session_id, pk):
+    """
+    Delete a visitor or substitute for a session.
+    Body: {"type": "visitor"|"substitute"}
+    """
+    try:
+        session = Session.objects.get(id=session_id)
+    except Session.DoesNotExist:
+        return Response({'error': 'Session not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    serializer = VisitorSubstituteSendSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    entry_type = serializer.validated_data['type']
+
+    if entry_type == 'visitor':
+        try:
+            entry = Visitor.objects.get(pk=pk, session=session)
+        except Visitor.DoesNotExist:
+            return Response({'error': 'Visitor not found'}, status=status.HTTP_404_NOT_FOUND)
+    else:
+        try:
+            entry = Substitute.objects.get(pk=pk, session=session)
+        except Substitute.DoesNotExist:
+            return Response({'error': 'Substitute not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    entry_id = entry.pk
+    entry.delete()
+
+    return Response(
+        {
+            'type': entry_type,
+            'id': entry_id,
+            'deleted': True,
+        },
+        status=status.HTTP_200_OK,
+    )
 
 
 @api_view(['PATCH'])
@@ -425,8 +686,6 @@ def scan_visitor_substitute(request, session_id, credential):
     Scan a visitor or substitute credential
     Input: {"device_id": "gate-1"}
     """
-    from django.utils import timezone
-
     try:
         session = Session.objects.get(id=session_id)
     except Session.DoesNotExist:

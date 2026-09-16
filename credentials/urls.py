@@ -10,8 +10,9 @@ from .views import (
     scan_credential,
     send_credential_invite,
     create_visitor_substitute,
-    list_session_visitors_substitutes,
+    delete_visitor_substitute,
     scan_visitor_substitute,
+    send_visitor_substitute_passes,
 )
 from .wallet_views import (
     wallet_apple_detail,
@@ -43,9 +44,14 @@ urlpatterns = [
         name='create-visitor-substitute',
     ),
     path(
-        'sessions/<int:session_id>/visitor-substitute/list/',
-        list_session_visitors_substitutes,
-        name='list-visitor-substitute',
+        'sessions/<int:session_id>/visitor-substitute/<int:pk>/send/',
+        send_visitor_substitute_passes,
+        name='send-visitor-substitute-passes',
+    ),
+    path(
+        'sessions/<int:session_id>/visitor-substitute/<int:pk>/',
+        delete_visitor_substitute,
+        name='delete-visitor-substitute',
     ),
     path(
         'sessions/<int:session_id>/visitor-substitute/scan/<str:credential>/',

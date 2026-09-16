@@ -2,7 +2,15 @@ import re
 
 from rest_framework import serializers
 
-from .models import Chapter, EmployeeCredential, ScanLog, Session, SessionAttendance
+from .models import (
+    Chapter,
+    EmployeeCredential,
+    ScanLog,
+    Session,
+    SessionAttendance,
+    Substitute,
+    Visitor,
+)
 
 
 class ChapterSerializer(serializers.ModelSerializer):
@@ -197,15 +205,28 @@ class ScanLogSerializer(serializers.ModelSerializer):
 
 class VisitorSerializer(serializers.ModelSerializer):
     member_name = serializers.CharField(source='member.name', read_only=True)
+    session_title = serializers.CharField(source='session.title', read_only=True, default='')
     formatted_created_at = serializers.SerializerMethodField()
 
     class Meta:
         model = Visitor
         fields = [
-            'id', 'session', 'member', 'member_name', 'name', 'email', 'phone',
-            'credential', 'status', 'scanned_at', 'created_at', 'formatted_created_at'
+            'id',
+            'session',
+            'session_title',
+            'member',
+            'member_name',
+            'name',
+            'email',
+            'phone',
+            'credential',
+            'status',
+            'scanned_at',
+            'sent_at',
+            'created_at',
+            'formatted_created_at',
         ]
-        read_only_fields = ['credential', 'scanned_at', 'created_at']
+        read_only_fields = ['credential', 'scanned_at', 'sent_at', 'created_at']
 
     def get_formatted_created_at(self, obj):
         return obj.created_at.strftime("%m/%d/%Y, %I:%M %p")
@@ -213,15 +234,28 @@ class VisitorSerializer(serializers.ModelSerializer):
 
 class SubstituteSerializer(serializers.ModelSerializer):
     member_name = serializers.CharField(source='member.name', read_only=True)
+    session_title = serializers.CharField(source='session.title', read_only=True, default='')
     formatted_created_at = serializers.SerializerMethodField()
 
     class Meta:
         model = Substitute
         fields = [
-            'id', 'session', 'member', 'member_name', 'name', 'email', 'phone',
-            'credential', 'status', 'scanned_at', 'created_at', 'formatted_created_at'
+            'id',
+            'session',
+            'session_title',
+            'member',
+            'member_name',
+            'name',
+            'email',
+            'phone',
+            'credential',
+            'status',
+            'scanned_at',
+            'sent_at',
+            'created_at',
+            'formatted_created_at',
         ]
-        read_only_fields = ['credential', 'scanned_at', 'created_at']
+        read_only_fields = ['credential', 'scanned_at', 'sent_at', 'created_at']
 
     def get_formatted_created_at(self, obj):
         return obj.created_at.strftime("%m/%d/%Y, %I:%M %p")
@@ -233,3 +267,15 @@ class VisitorSubstituteCreateSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=255)
     email = serializers.EmailField(required=False, allow_blank=True, allow_null=True)
     phone = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
+
+class VisitorSubstituteSendSerializer(serializers.Serializer):
+    type = serializers.ChoiceField(choices=['visitor', 'substitute'])
+
+
+class EmployeeCredentialListSerializer(EmployeeCredentialSerializer):
+    visitors = VisitorSerializer(source='issued_visitors', many=True, read_only=True)
+    substitutes = SubstituteSerializer(source='issued_substitutes', many=True, read_only=True)
+
+    class Meta(EmployeeCredentialSerializer.Meta):
+        fields = EmployeeCredentialSerializer.Meta.fields + ['visitors', 'substitutes']

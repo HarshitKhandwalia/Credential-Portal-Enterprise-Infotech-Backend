@@ -1,26 +1,69 @@
+from dataclasses import dataclass
+
 import requests
 from django.conf import settings
 
 PASS_LINK_KEYS = ('pass_url', 'url', 'link', 'save_url', 'download_url')
 
+CARD_TITLE_MEMBER = 'BNI Membership Card'
+CARD_TITLE_VISITOR = 'BNI Visitor Card'
+CARD_TITLE_SUBSTITUTE = 'BNI Substitute Card'
 
-def _build_google_payload(employee):
+
+@dataclass(frozen=True)
+class PassSubject:
+    name: str
+    credential: str
+    membership_id: str
+    card_title: str
+
+
+def pass_subject_from_employee(employee):
+    return PassSubject(
+        name=employee.name,
+        credential=employee.credential,
+        membership_id=employee.membership_id,
+        card_title=CARD_TITLE_MEMBER,
+    )
+
+
+def pass_subject_from_visitor(visitor):
+    return PassSubject(
+        name=visitor.name,
+        credential=visitor.credential,
+        membership_id=f'{visitor.member.membership_id}-V-{visitor.pk}',
+        card_title=CARD_TITLE_VISITOR,
+    )
+
+
+def pass_subject_from_substitute(substitute):
+    return PassSubject(
+        name=substitute.name,
+        credential=substitute.credential,
+        membership_id=f'{substitute.member.membership_id}-S-{substitute.pk}',
+        card_title=CARD_TITLE_SUBSTITUTE,
+    )
+
+
+def _build_google_payload(subject):
     return {
-        'name': employee.name,
-        'credential': employee.credential,
-        'membership_id': employee.membership_id,
+        'name': subject.name,
+        'credential': subject.credential,
+        'membership_id': subject.membership_id,
+        'card_title': subject.card_title,
     }
 
 
-def _build_apple_payload(employee):
+def _build_apple_payload(subject):
     return {
         'foregroundColor': 'rgb(255,255,255)',
         'backgroundColor': 'rgb(196,36,42)',
         'labelColor': 'rgb(255,255,255)',
-        'userName': employee.name,
-        'membershipId': employee.membership_id,
-        'barcodeMessage': employee.credential,
-        'serialNumber': employee.membership_id,
+        'userName': subject.name,
+        'membershipId': subject.membership_id,
+        'barcodeMessage': subject.credential,
+        'serialNumber': subject.membership_id,
+        'logoText': subject.card_title,
     }
 
 
@@ -73,16 +116,16 @@ def extract_pass_link(service_result):
     return None
 
 
-def generate_google_pass(employee):
+def generate_google_pass(subject):
     return _request_json_pass_service(
         f"{settings.GOOGLE_PASS_SERVICE_URL.rstrip('/')}/passes/qr",
-        _build_google_payload(employee),
+        _build_google_payload(subject),
     )
 
 
-def generate_apple_pass(employee):
+def generate_apple_pass(subject):
     url = f"{settings.APPLE_PASS_SERVICE_URL.rstrip('/')}/generate_apple_pass"
-    payload = _build_apple_payload(employee)
+    payload = _build_apple_payload(subject)
 
     try:
         service_response = requests.post(
