@@ -248,11 +248,22 @@ def send_credential_invite(request, pk):
     except EmployeeCredential.DoesNotExist:
         return Response({'error': 'Credential not found'}, status=status.HTTP_404_NOT_FOUND)
 
-    email = request.data.get('email', employee.email)
-    phone = request.data.get('phone', employee.phone)
+    # Only overwrite contact fields when the client sends a non-empty value.
+    # Frontend often sends phone/email as null, which previously wiped seeded data.
+    if 'email' in request.data:
+        email = request.data.get('email')
+        if isinstance(email, str):
+            email = email.strip() or None
+        if email:
+            employee.email = email
 
-    employee.email = email
-    employee.phone = phone
+    if 'phone' in request.data:
+        phone = request.data.get('phone')
+        if isinstance(phone, str):
+            phone = phone.strip() or None
+        if phone:
+            employee.phone = phone
+
     employee.status = 'invite_sent'
     employee.save()
 
