@@ -4,8 +4,7 @@ from rest_framework import status, viewsets
 from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 
-from mailer import send_wallet_links_email
-
+from .delivery import deliver_wallet_links
 from .models import (
     Chapter,
     EmployeeCredential,
@@ -26,6 +25,7 @@ from .serializers import (
     VisitorSerializer,
     VisitorSubstituteCreateSerializer,
     VisitorSubstituteSendSerializer,
+    WalletChannelsSerializer,
 )
 from .utils import (
     MAX_RECURRING_SESSIONS,
@@ -198,6 +198,13 @@ def get_view_name(self):
 
 @api_view(['POST'])
 def generate_QR_passes(request, pk):
+    """
+    Send wallet links for a member.
+
+    Body (optional): {"channels": ["email", "whatsapp"]}
+    Omitted channels means email only, matching existing clients.
+    When channels is sent, both results are returned even if one fails.
+    """
     try:
         employee = EmployeeCredential.objects.get(pk=pk)
     except EmployeeCredential.DoesNotExist:
@@ -206,39 +213,44 @@ def generate_QR_passes(request, pk):
             status=status.HTTP_404_NOT_FOUND,
         )
 
-    if not employee.email:
-        return Response(
-            {'error': 'Email is required to send wallet links.'},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
+    channel_serializer = WalletChannelsSerializer(data=request.data)
+    if not channel_serializer.is_valid():
+        return Response(channel_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    channels = channel_serializer.validated_data.get('channels') or ['email']
+    explicit_channels = 'channels' in channel_serializer.validated_data
     wallet_urls = build_employee_wallet_urls(employee)
+    delivery = deliver_wallet_links(
+        name=employee.name,
+        email=employee.email,
+        phone=employee.phone,
+        wallet_urls=wallet_urls,
+        channels=channels,
+    )
 
-    try:
-        send_wallet_links_email(
-            to_email=employee.email,
-            name=employee.name,
-            apple_wallet_url=wallet_urls['apple'],
-            google_wallet_url=wallet_urls['google'],
-        )
-    except Exception as exc:
+    if not explicit_channels:
+        if not delivery.get('email_sent'):
+            error = delivery.get('errors', {}).get('email', 'Failed to send wallet email.')
+            status_code = (
+                status.HTTP_400_BAD_REQUEST
+                if not employee.email
+                else status.HTTP_502_BAD_GATEWAY
+            )
+            body = {'error': error, 'employee_id': employee.pk}
+            if employee.email:
+                body['wallet_urls'] = wallet_urls
+            return Response(body, status=status_code)
         return Response(
             {
-                'error': f'Failed to send wallet email: {exc}',
                 'employee_id': employee.pk,
+                'email_sent': True,
                 'wallet_urls': wallet_urls,
             },
-            status=status.HTTP_502_BAD_GATEWAY,
+            status=status.HTTP_200_OK,
         )
 
-    return Response(
-        {
-            'employee_id': employee.pk,
-            'email_sent': True,
-            'wallet_urls': wallet_urls,
-        },
-        status=status.HTTP_200_OK,
-    )
+    delivery['employee_id'] = employee.pk
+    return Response(delivery, status=status.HTTP_200_OK)
 
 
 @api_view(['POST'])
@@ -580,8 +592,11 @@ def create_visitor_substitute(request, session_id):
 @api_view(['POST'])
 def send_visitor_substitute_passes(request, session_id, pk):
     """
-    Email Apple/Google wallet links for a visitor or substitute.
-    Body: {"type": "visitor"|"substitute"}
+    Send Apple/Google wallet links for a visitor or substitute.
+
+    Body: {"type": "visitor"|"substitute", "channels": ["email", "whatsapp"]}
+    Omitted channels means email only. When channels is sent, both results
+    are returned even if one fails.
     """
     try:
         session = Session.objects.get(id=session_id)
@@ -609,45 +624,49 @@ def send_visitor_substitute_passes(request, session_id, pk):
         pass_kind = PASS_KIND_SUBSTITUTE
         response_serializer = SubstituteSerializer
 
-    if not entry.email:
-        return Response(
-            {'error': 'Email is required to send wallet links.'},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
+    channels = serializer.validated_data.get('channels') or ['email']
+    explicit_channels = 'channels' in serializer.validated_data
     wallet_urls = build_wallet_urls(pass_kind, entry.pk)
+    delivery = deliver_wallet_links(
+        name=entry.name,
+        email=entry.email,
+        phone=entry.phone,
+        wallet_urls=wallet_urls,
+        channels=channels,
+    )
+    sent = delivery.get('email_sent') or delivery.get('whatsapp_sent')
 
-    try:
-        send_wallet_links_email(
-            to_email=entry.email,
-            name=entry.name,
-            apple_wallet_url=wallet_urls['apple'],
-            google_wallet_url=wallet_urls['google'],
-        )
-    except Exception as exc:
+    if sent:
+        entry.sent_at = timezone.now()
+        entry.save(update_fields=['sent_at'])
+
+    if not explicit_channels:
+        if not delivery.get('email_sent'):
+            error = delivery.get('errors', {}).get('email', 'Failed to send wallet email.')
+            status_code = (
+                status.HTTP_400_BAD_REQUEST
+                if not entry.email
+                else status.HTTP_502_BAD_GATEWAY
+            )
+            body = {'error': error, 'type': entry_type, 'id': entry.pk}
+            if entry.email:
+                body['wallet_urls'] = wallet_urls
+            return Response(body, status=status_code)
         return Response(
             {
-                'error': f'Failed to send wallet email: {exc}',
                 'type': entry_type,
                 'id': entry.pk,
+                'email_sent': True,
                 'wallet_urls': wallet_urls,
+                'data': response_serializer(entry).data,
             },
-            status=status.HTTP_502_BAD_GATEWAY,
+            status=status.HTTP_200_OK,
         )
 
-    entry.sent_at = timezone.now()
-    entry.save(update_fields=['sent_at'])
-
-    return Response(
-        {
-            'type': entry_type,
-            'id': entry.pk,
-            'email_sent': True,
-            'wallet_urls': wallet_urls,
-            'data': response_serializer(entry).data,
-        },
-        status=status.HTTP_200_OK,
-    )
+    delivery['type'] = entry_type
+    delivery['id'] = entry.pk
+    delivery['data'] = response_serializer(entry).data
+    return Response(delivery, status=status.HTTP_200_OK)
 
 
 @api_view(['DELETE'])

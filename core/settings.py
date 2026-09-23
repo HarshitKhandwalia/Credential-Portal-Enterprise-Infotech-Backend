@@ -162,6 +162,21 @@ PASS_SERVICE_TIMEOUT_SECONDS = float(_env('PASS_SERVICE_TIMEOUT_SECONDS', '10'))
 
 FRONTEND_BASE_URL = _env('FRONTEND_BASE_URL', 'http://localhost:5173')
 WALLET_TOKEN_EXPIRY_DAYS = int(_env('WALLET_TOKEN_EXPIRY_DAYS', '7'))
+
+WHATSAPP_SEND_URL = _env('WHATSAPP_SEND_URL')
+WHATSAPP_INSTANCE_ID = _env('WHATSAPP_INSTANCE_ID')
+WHATSAPP_TIMEOUT_SECONDS = float(_env('WHATSAPP_TIMEOUT_SECONDS', '30'))
+# Plain-text body sent when the whatsapp channel is requested.
+# Placeholders: {name}, {apple_wallet_url}, {google_wallet_url}
+WHATSAPP_WALLET_MESSAGE = """Hey {name},
+
+Greetings! Choose how you would like to add your digital pass:
+
+Apple Wallet: {apple_wallet_url}
+Google Wallet: {google_wallet_url}
+
+Open the link for your device, then tap the wallet button to add your pass.
+"""
 WALLET_TOKEN_EXPIRY_SECONDS = WALLET_TOKEN_EXPIRY_DAYS * 24 * 60 * 60
 
 if not DEBUG:

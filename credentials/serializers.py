@@ -269,7 +269,29 @@ class VisitorSubstituteCreateSerializer(serializers.Serializer):
     phone = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
 
-class VisitorSubstituteSendSerializer(serializers.Serializer):
+class WalletChannelsSerializer(serializers.Serializer):
+    """Optional delivery channels. Omitted means email only (existing clients)."""
+
+    channels = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+        allow_empty=False,
+    )
+
+    def validate_channels(self, value):
+        normalized = []
+        for item in value:
+            name = str(item).strip().lower()
+            if name not in ('email', 'whatsapp'):
+                raise serializers.ValidationError(
+                    'Each channel must be "email" or "whatsapp".'
+                )
+            if name not in normalized:
+                normalized.append(name)
+        return normalized
+
+
+class VisitorSubstituteSendSerializer(WalletChannelsSerializer):
     type = serializers.ChoiceField(choices=['visitor', 'substitute'])
 
 
