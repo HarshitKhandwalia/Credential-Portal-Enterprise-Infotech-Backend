@@ -173,6 +173,8 @@ WHATSAPP_WALLET_MESSAGE = """Hey {name},
 Greetings! Choose how you would like to add your digital pass:
 
 Apple Wallet: {apple_wallet_url}
+
+
 Google Wallet: {google_wallet_url}
 
 Open the link for your device, then tap the wallet button to add your pass.
