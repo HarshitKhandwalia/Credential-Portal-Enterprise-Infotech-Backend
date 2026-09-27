@@ -301,3 +301,33 @@ class EmployeeCredentialListSerializer(EmployeeCredentialSerializer):
 
     class Meta(EmployeeCredentialSerializer.Meta):
         fields = EmployeeCredentialSerializer.Meta.fields + ['visitors', 'substitutes']
+
+class PaymentHistorySerializer(serializers.ModelSerializer):
+    """Serializer for payment history records."""
+    employee_name = serializers.CharField(source='employee.name', read_only=True)
+    cycle_display = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = PaymentHistory
+        fields = ['id', 'employee', 'employee_name', 'cycle_start', 'cycle_end', 'cycle_display', 'paid_at']
+        read_only_fields = ['paid_at']
+    
+    def get_cycle_display(self, obj):
+        """Format cycle dates for display. Example: 'Sept 1 - Oct 1, 2026'"""
+        start_str = obj.cycle_start.strftime("%b %d")
+        end_str = obj.cycle_end.strftime("%b %d, %Y")
+        return f"{start_str} - {end_str}"
+
+
+class PaymentReportSerializer(serializers.Serializer):
+    """
+    Serializer for payment report for a chapter in a specific cycle.
+    Shows breakdown of paid vs unpaid members for that cycle.
+    """
+    chapter = ChapterSerializer()
+    cycle_display = serializers.CharField()  # e.g., "Sept 1 - Oct 1, 2026"
+    total_count = serializers.IntegerField()
+    paid_count = serializers.IntegerField()
+    unpaid_count = serializers.IntegerField()
+    paid = EmployeeSummarySerializer(many=True)
+    unpaid = EmployeeSummarySerializer(many=True)

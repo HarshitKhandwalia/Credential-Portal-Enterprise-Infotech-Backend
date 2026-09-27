@@ -13,6 +13,9 @@ from .views import (
     delete_visitor_substitute,
     scan_visitor_substitute,
     send_visitor_substitute_passes,
+    payment_report,
+    get_cycles_for_dropdown,
+    mark_employee_paid,
 )
 from .wallet_views import (
     wallet_apple_detail,
@@ -70,4 +73,7 @@ urlpatterns = [
         wallet_google_generate,
         name='wallet-google-generate',
     ),
+    path('chapters/<int:chapter_id>/payment-report/', payment_report, name='payment-report'),
+    path('cycles-dropdown/', get_cycles_for_dropdown, name='cycles-dropdown'),
+    path('credentials/<int:employee_id>/mark-paid/', mark_employee_paid, name='mark-paid'),
 ]

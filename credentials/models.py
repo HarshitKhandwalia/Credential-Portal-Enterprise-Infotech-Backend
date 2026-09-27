@@ -220,3 +220,34 @@ class Substitute(models.Model):
 
     def __str__(self):
         return f"Substitute: {self.name} ({self.member.name})"
+class PaymentHistory(models.Model):
+    """
+    Track payment history for employees across cycles.
+    Each record represents one employee paid for one cycle.
+    """
+    employee = models.ForeignKey(
+        EmployeeCredential,
+        on_delete=models.CASCADE,
+        related_name='payment_history',
+    )
+    
+    # Cycle dates (e.g., Sept 1 2026 to Oct 1 2026)
+    cycle_start = models.DateTimeField()
+    cycle_end = models.DateTimeField()
+    
+    # When marked as paid
+    paid_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        ordering = ['-cycle_start']
+        # Prevent duplicate payments for same employee in same cycle
+        constraints = [
+            models.UniqueConstraint(
+                fields=['employee', 'cycle_start'],
+                name='unique_employee_cycle_payment',
+            ),
+        ]
+    
+    def __str__(self):
+        cycle_display = f"{self.cycle_start.strftime('%b')} - {self.cycle_end.strftime('%b %Y')}"
+        return f"{self.employee.name} paid for {cycle_display}"
