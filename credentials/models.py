@@ -1,5 +1,4 @@
 from django.db import models
-
 from .utils import generate_unique_credential
 
 
@@ -59,6 +58,12 @@ class EmployeeCredential(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='not_invited')
     email = models.EmailField(blank=True, null=True)
     phone = models.CharField(max_length=30, blank=True, null=True)
+    designation = models.CharField(max_length=255, blank=True, null=True)
+    
+    # Changed from URLField to CharField so URLs without 'http://' or 'https://' save without errors
+    linkedin = models.CharField(max_length=500, blank=True, null=True)
+    website = models.CharField(max_length=500, blank=True, null=True)
+    
     primary_credential = models.CharField(max_length=50, choices=PRIMARY_CREDENTIAL_CHOICES, default='QR')
     secondary_credential = models.CharField(max_length=50, choices=SECONDARY_CREDENTIAL_CHOICES, default='Email')
     created_at = models.DateTimeField(auto_now_add=True)

@@ -1,7 +1,5 @@
 import re
-
 from rest_framework import serializers
-
 from .models import Chapter, EmployeeCredential, ScanLog, Session, SessionAttendance
 
 
@@ -39,11 +37,6 @@ class SessionSerializer(serializers.ModelSerializer):
 
 
 class RecurringSessionCreateSerializer(serializers.Serializer):
-    """
-    Create weekly sessions up front (same weekday as starts_at) until recurrence_end_date.
-    Cap: 10 sessions.
-    """
-
     title = serializers.CharField(max_length=255, required=False, allow_blank=True, default='')
     starts_at = serializers.DateTimeField()
     ends_at = serializers.DateTimeField()
@@ -77,6 +70,12 @@ class RecurringSessionCreateSerializer(serializers.Serializer):
 class EmployeeCredentialSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(required=False, allow_blank=True, allow_null=True)
     phone = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    
+    # Changed from URLField to CharField so any text standard link format works
+    designation = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    linkedin = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    website = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
     credential = serializers.CharField(read_only=True)
     chapter = serializers.PrimaryKeyRelatedField(
         queryset=Chapter.objects.all(),
@@ -96,6 +95,9 @@ class EmployeeCredentialSerializer(serializers.ModelSerializer):
             'status',
             'email',
             'phone',
+            'designation',
+            'linkedin',
+            'website',
             'primary_credential',
             'secondary_credential',
             'chapter',
@@ -152,7 +154,6 @@ class EmployeeCredentialSerializer(serializers.ModelSerializer):
             if 'chapter' not in attrs or attrs.get('chapter') is None:
                 raise serializers.ValidationError({'chapter': 'Chapter is required.'})
         else:
-            # On update, only enforce contact if both would become empty.
             if email is None and phone is None:
                 raise serializers.ValidationError(
                     {"non_field_errors": ["At least one contact method (Email or Phone Number) is required."]}
@@ -164,7 +165,18 @@ class EmployeeCredentialSerializer(serializers.ModelSerializer):
 class EmployeeSummarySerializer(serializers.ModelSerializer):
     class Meta:
         model = EmployeeCredential
-        fields = ['id', 'name', 'membership_id', 'credential', 'email', 'phone']
+        # ADDED designation, linkedin, and website so summary responses include them
+        fields = [
+            'id', 
+            'name', 
+            'membership_id', 
+            'credential', 
+            'email', 
+            'phone', 
+            'designation', 
+            'linkedin', 
+            'website'
+        ]
 
 
 class SessionAttendanceSerializer(serializers.ModelSerializer):
