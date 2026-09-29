@@ -1,6 +1,6 @@
 from django.db import models
 
-from .utils import generate_unique_credential
+from .utils import format_cycle_display, generate_unique_credential
 
 
 class Chapter(models.Model):
@@ -220,6 +220,8 @@ class Substitute(models.Model):
 
     def __str__(self):
         return f"Substitute: {self.name} ({self.member.name})"
+
+
 class PaymentHistory(models.Model):
     """
     Track payment history for employees across cycles.
@@ -230,24 +232,19 @@ class PaymentHistory(models.Model):
         on_delete=models.CASCADE,
         related_name='payment_history',
     )
-    
-    # Cycle dates (e.g., Sept 1 2026 to Oct 1 2026)
     cycle_start = models.DateTimeField()
     cycle_end = models.DateTimeField()
-    
-    # When marked as paid
     paid_at = models.DateTimeField(auto_now_add=True)
-    
+
     class Meta:
         ordering = ['-cycle_start']
-        # Prevent duplicate payments for same employee in same cycle
         constraints = [
             models.UniqueConstraint(
                 fields=['employee', 'cycle_start'],
                 name='unique_employee_cycle_payment',
             ),
         ]
-    
+        verbose_name_plural = 'payment histories'
+
     def __str__(self):
-        cycle_display = f"{self.cycle_start.strftime('%b')} - {self.cycle_end.strftime('%b %Y')}"
-        return f"{self.employee.name} paid for {cycle_display}"
+        return f"{self.employee.name} paid for {format_cycle_display(self.cycle_start, self.cycle_end)}"

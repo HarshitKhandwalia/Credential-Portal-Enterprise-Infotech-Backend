@@ -5,12 +5,14 @@ from rest_framework import serializers
 from .models import (
     Chapter,
     EmployeeCredential,
+    PaymentHistory,
     ScanLog,
     Session,
     SessionAttendance,
     Substitute,
     Visitor,
 )
+from .utils import format_cycle_display
 
 
 class ChapterSerializer(serializers.ModelSerializer):
@@ -302,21 +304,34 @@ class EmployeeCredentialListSerializer(EmployeeCredentialSerializer):
     class Meta(EmployeeCredentialSerializer.Meta):
         fields = EmployeeCredentialSerializer.Meta.fields + ['visitors', 'substitutes']
 
+
 class PaymentHistorySerializer(serializers.ModelSerializer):
     """Serializer for payment history records."""
+    employee_id = serializers.IntegerField(read_only=True)
     employee_name = serializers.CharField(source='employee.name', read_only=True)
     cycle_display = serializers.SerializerMethodField()
-    
+
     class Meta:
         model = PaymentHistory
-        fields = ['id', 'employee', 'employee_name', 'cycle_start', 'cycle_end', 'cycle_display', 'paid_at']
-        read_only_fields = ['paid_at']
-    
+        fields = [
+            'id',
+            'employee',
+            'employee_id',
+            'employee_name',
+            'cycle_start',
+            'cycle_end',
+            'cycle_display',
+            'paid_at',
+        ]
+        read_only_fields = [
+            'paid_at',
+            'employee_id',
+            'employee_name',
+            'cycle_display',
+        ]
+
     def get_cycle_display(self, obj):
-        """Format cycle dates for display. Example: 'Sept 1 - Oct 1, 2026'"""
-        start_str = obj.cycle_start.strftime("%b %d")
-        end_str = obj.cycle_end.strftime("%b %d, %Y")
-        return f"{start_str} - {end_str}"
+        return format_cycle_display(obj.cycle_start, obj.cycle_end)
 
 
 class PaymentReportSerializer(serializers.Serializer):
@@ -325,7 +340,9 @@ class PaymentReportSerializer(serializers.Serializer):
     Shows breakdown of paid vs unpaid members for that cycle.
     """
     chapter = ChapterSerializer()
-    cycle_display = serializers.CharField()  # e.g., "Sept 1 - Oct 1, 2026"
+    cycle_display = serializers.CharField()
+    cycle_start = serializers.DateTimeField()
+    cycle_end = serializers.DateTimeField()
     total_count = serializers.IntegerField()
     paid_count = serializers.IntegerField()
     unpaid_count = serializers.IntegerField()

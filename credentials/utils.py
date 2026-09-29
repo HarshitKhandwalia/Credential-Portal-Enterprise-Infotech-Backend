@@ -1,6 +1,8 @@
 import secrets
 from datetime import date, datetime, timedelta
 
+from django.utils import timezone
+
 
 MAX_RECURRING_SESSIONS = 10
 
@@ -46,95 +48,60 @@ def generate_weekly_occurrences(
         yield current_start, current_start + duration
         current_start = current_start + timedelta(weeks=1)
         count += 1
+
+
+def _shift_months(dt: datetime, months: int) -> datetime:
+    """Return dt shifted by `months`, clamped to day 1 of that month at midnight."""
+    month_index = (dt.year * 12 + (dt.month - 1)) + months
+    year, month0 = divmod(month_index, 12)
+    return dt.replace(
+        year=year,
+        month=month0 + 1,
+        day=1,
+        hour=0,
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
+
+
+def cycle_end_from_start(cycle_start: datetime) -> datetime:
+    """Return the exclusive cycle end (1st of the following month)."""
+    return _shift_months(cycle_start, 1)
+
+
+def format_cycle_display(cycle_start: datetime, cycle_end: datetime) -> str:
+    """Format cycle dates for display. Example: 'Sep 01 - Oct 01, 2026'."""
+    start_str = cycle_start.strftime('%b %d')
+    end_str = cycle_end.strftime('%b %d, %Y')
+    return f'{start_str} - {end_str}'
+
+
 def get_current_cycle():
     """
     Calculate current payment cycle dates.
     Cycle runs from the 1st of current month to 1st of next month.
-    Example: Sept 1 2026 to Oct 1 2026, Oct 1 2026 to Nov 1 2026, etc.
-    
+
     Returns:
-        tuple: (cycle_start, cycle_end) as datetime objects
+        tuple: (cycle_start, cycle_end) as timezone-aware datetime objects
     """
-    now = datetime.now()
-    
-    # Cycle starts on 1st of current month at midnight
+    now = timezone.now()
     cycle_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    
-    # Cycle ends on 1st of next month at midnight
-    if cycle_start.month == 12:
-        cycle_end = cycle_start.replace(year=cycle_start.year + 1, month=1)
-    else:
-        cycle_end = cycle_start.replace(month=cycle_start.month + 1)
-    
-    return cycle_start, cycle_end
-
-
-def get_cycle_display():
-    """
-    Get human-readable cycle dates for display.
-    Example: "Sept 1 - Oct 1, 2026"
-    
-    Returns:
-        str: Formatted cycle date range
-    """
-    cycle_start, cycle_end = get_current_cycle()
-    
-    # Format: "Sept 1 - Oct 1, 2026"
-    start_str = cycle_start.strftime("%b %d")
-    end_str = cycle_end.strftime("%b %d, %Y")
-    
-    return f"{start_str} - {end_str}"
+    return cycle_start, cycle_end_from_start(cycle_start)
 
 
 def get_past_cycles(months_back=6):
     """
-    Get list of past cycle dates for dropdown.
+    Get list of current and past cycle dates for dropdown.
     Returns tuples of (cycle_start, cycle_end, display_string).
-    
-    Args:
-        months_back: How many months back to show (default 6)
-    
-    Returns:
-        list: [(start, end, display_string), ...]
     """
+    now = timezone.now()
     cycles = []
-    now = datetime.now()
-    
-    # Get current and past cycles
+
     for i in range(months_back + 1):
-        # Go back i months
-        if now.month - i > 0:
-            cycle_start = now.replace(
-                year=now.year,
-                month=now.month - i,
-                day=1,
-                hour=0,
-                minute=0,
-                second=0,
-                microsecond=0
-            )
-        else:
-            cycle_start = now.replace(
-                year=now.year - 1,
-                month=12 + (now.month - i),
-                day=1,
-                hour=0,
-                minute=0,
-                second=0,
-                microsecond=0
-            )
-        
-        # Cycle end is 1st of next month
-        if cycle_start.month == 12:
-            cycle_end = cycle_start.replace(year=cycle_start.year + 1, month=1)
-        else:
-            cycle_end = cycle_start.replace(month=cycle_start.month + 1)
-        
-        # Format display
-        start_str = cycle_start.strftime("%b %d")
-        end_str = cycle_end.strftime("%b %d, %Y")
-        display = f"{start_str} - {end_str}"
-        
+        cycle_start = _shift_months(now, -i)
+        cycle_end = cycle_end_from_start(cycle_start)
+        display = format_cycle_display(cycle_start, cycle_end)
         cycles.append((cycle_start, cycle_end, display))
-    
+
     return cycles

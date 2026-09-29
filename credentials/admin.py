@@ -1,6 +1,15 @@
 from django.contrib import admin
 
-from .models import Chapter, EmployeeCredential, ScanLog, Session, SessionAttendance, Visitor, Substitute
+from .models import (
+    Chapter,
+    EmployeeCredential,
+    PaymentHistory,
+    ScanLog,
+    Session,
+    SessionAttendance,
+    Substitute,
+    Visitor,
+)
 
 
 @admin.register(Chapter)
@@ -63,3 +72,11 @@ class SubstituteAdmin(admin.ModelAdmin):
     search_fields = ['name', 'credential', 'member__name']
     list_filter = ['status', 'session', 'created_at']
     readonly_fields = ['credential', 'created_at', 'scanned_at']
+
+
+@admin.register(PaymentHistory)
+class PaymentHistoryAdmin(admin.ModelAdmin):
+    list_display = ['employee', 'cycle_start', 'cycle_end', 'paid_at']
+    search_fields = ['employee__name', 'employee__membership_id']
+    list_filter = ['cycle_start', 'employee__chapter']
+    readonly_fields = ['paid_at']

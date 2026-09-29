@@ -1,16 +1,17 @@
+from datetime import datetime
+
+from django.db import IntegrityError
 from django.db.models import Prefetch
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
-from django.utils import timezone
-from .utils import get_current_cycle, get_cycle_display, get_past_cycles
-from .models import PaymentHistory
 
 from .delivery import deliver_wallet_links
 from .models import (
     Chapter,
     EmployeeCredential,
+    PaymentHistory,
     ScanLog,
     Session,
     SessionAttendance,
@@ -22,6 +23,8 @@ from .serializers import (
     EmployeeCredentialListSerializer,
     EmployeeCredentialSerializer,
     EmployeeSummarySerializer,
+    PaymentHistorySerializer,
+    PaymentReportSerializer,
     RecurringSessionCreateSerializer,
     SessionSerializer,
     SubstituteSerializer,
@@ -32,8 +35,12 @@ from .serializers import (
 )
 from .utils import (
     MAX_RECURRING_SESSIONS,
+    cycle_end_from_start,
+    format_cycle_display,
     format_session_title,
     generate_weekly_occurrences,
+    get_current_cycle,
+    get_past_cycles,
 )
 from .wallet_tokens import (
     PASS_KIND_SUBSTITUTE,
@@ -775,73 +782,72 @@ def scan_visitor_substitute(request, session_id, credential):
         'status': 'NOT_FOUND',
         'message': 'Visitor or substitute not found',
     }, status=status.HTTP_404_NOT_FOUND)
+
+
+def _parse_cycle_start(cycle_start_str):
+    """
+    Parse an ISO cycle_start query value into a timezone-aware datetime
+    normalized to the 1st of that month at midnight.
+    """
+    parsed = datetime.fromisoformat(cycle_start_str)
+    if timezone.is_naive(parsed):
+        parsed = timezone.make_aware(parsed, timezone.get_current_timezone())
+    return parsed.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+
 @api_view(['GET'])
 def payment_report(request, chapter_id):
     """
     Get payment report for a chapter for a specific cycle.
     Shows which members have paid and which haven't for that cycle.
-    
+
     Query params:
         - cycle_start: ISO format date (e.g., 2026-09-01). Default: current cycle
-    
+
     GET /api/chapters/{chapter_id}/payment-report/?cycle_start=2026-09-01
     """
     try:
         chapter = Chapter.objects.get(id=chapter_id)
     except Chapter.DoesNotExist:
         return Response({'error': 'Chapter not found'}, status=status.HTTP_404_NOT_FOUND)
-    
-    # Get requested cycle or default to current
+
     cycle_start_str = request.query_params.get('cycle_start')
     if cycle_start_str:
         try:
-            cycle_start = datetime.fromisoformat(cycle_start_str)
+            cycle_start = _parse_cycle_start(cycle_start_str)
         except ValueError:
             return Response(
                 {'error': 'Invalid cycle_start format. Use ISO format: 2026-09-01'},
-                status=status.HTTP_400_BAD_REQUEST
+                status=status.HTTP_400_BAD_REQUEST,
             )
     else:
         cycle_start, _ = get_current_cycle()
-    
-    # Calculate cycle end (1st of next month)
-    if cycle_start.month == 12:
-        cycle_end = cycle_start.replace(year=cycle_start.year + 1, month=1)
-    else:
-        cycle_end = cycle_start.replace(month=cycle_start.month + 1)
-    
-    # Get all members in chapter
-    all_members = EmployeeCredential.objects.filter(chapter=chapter).order_by('name')
-    
-    # Get payment records for this cycle
-    paid_payment_ids = PaymentHistory.objects.filter(
-        employee__chapter=chapter,
-        cycle_start=cycle_start
-    ).values_list('employee_id', flat=True)
-    
-    # Separate into paid and unpaid
-    paid_members = [m for m in all_members if m.id in paid_payment_ids]
-    unpaid_members = [m for m in all_members if m.id not in paid_payment_ids]
-    
-    # Format cycle display
-    start_str = cycle_start.strftime("%b %d")
-    end_str = cycle_end.strftime("%b %d, %Y")
-    cycle_display = f"{start_str} - {end_str}"
-    
-    # Prepare response
+
+    cycle_end = cycle_end_from_start(cycle_start)
+
+    paid_ids = set(
+        PaymentHistory.objects.filter(
+            employee__chapter=chapter,
+            cycle_start=cycle_start,
+        ).values_list('employee_id', flat=True)
+    )
+
+    members = EmployeeCredential.objects.filter(chapter=chapter).order_by('name')
+    paid_members = list(members.filter(id__in=paid_ids))
+    unpaid_members = list(members.exclude(id__in=paid_ids))
+
     response_data = {
-        'chapter': ChapterSerializer(chapter).data,
-        'cycle_display': cycle_display,
-        'cycle_start': cycle_start.isoformat(),
-        'cycle_end': cycle_end.isoformat(),
-        'total_count': len(all_members),
+        'chapter': chapter,
+        'cycle_display': format_cycle_display(cycle_start, cycle_end),
+        'cycle_start': cycle_start,
+        'cycle_end': cycle_end,
+        'total_count': len(paid_members) + len(unpaid_members),
         'paid_count': len(paid_members),
         'unpaid_count': len(unpaid_members),
-        'paid': EmployeeSummarySerializer(paid_members, many=True).data,
-        'unpaid': EmployeeSummarySerializer(unpaid_members, many=True).data,
+        'paid': paid_members,
+        'unpaid': unpaid_members,
     }
-    
-    return Response(response_data)
+    return Response(PaymentReportSerializer(response_data).data)
 
 
 @api_view(['GET'])
@@ -849,22 +855,25 @@ def get_cycles_for_dropdown(request):
     """
     Get list of past cycles for dropdown selection.
     Returns current cycle and past 6 months.
-    
+
+    cycle_start / cycle_end are date-only (YYYY-MM-DD) so they are safe
+    to pass as payment-report query params without timezone encoding issues.
+
     GET /api/cycles-dropdown/
     """
     cycles = get_past_cycles(months_back=6)
-    
-    # Format response
+    current_start, _ = get_current_cycle()
+
     cycle_list = [
         {
-            'cycle_start': start.isoformat(),
-            'cycle_end': end.isoformat(),
+            'cycle_start': start.date().isoformat(),
+            'cycle_end': end.date().isoformat(),
             'display': display,
-            'is_current': start.month == datetime.now().month and start.year == datetime.now().year,
+            'is_current': start == current_start,
         }
         for start, end, display in cycles
     ]
-    
+
     return Response({'cycles': cycle_list})
 
 
@@ -873,7 +882,7 @@ def mark_employee_paid(request, employee_id):
     """
     Mark an employee as paid for current cycle.
     Creates a PaymentHistory record.
-    
+
     POST /api/credentials/{employee_id}/mark-paid/
     Body: {} (no body needed, uses current cycle)
     """
@@ -881,37 +890,28 @@ def mark_employee_paid(request, employee_id):
         employee = EmployeeCredential.objects.get(id=employee_id)
     except EmployeeCredential.DoesNotExist:
         return Response({'error': 'Employee not found'}, status=status.HTTP_404_NOT_FOUND)
-    
-    # Get current cycle
+
     cycle_start, cycle_end = get_current_cycle()
-    
-    # Check if already paid for this cycle
-    payment_exists = PaymentHistory.objects.filter(
-        employee=employee,
-        cycle_start=cycle_start
-    ).exists()
-    
-    if payment_exists:
+
+    try:
+        payment, created = PaymentHistory.objects.get_or_create(
+            employee=employee,
+            cycle_start=cycle_start,
+            defaults={'cycle_end': cycle_end},
+        )
+    except IntegrityError:
         return Response(
             {'error': 'Employee already marked as paid for this cycle'},
-            status=status.HTTP_400_BAD_REQUEST
+            status=status.HTTP_400_BAD_REQUEST,
         )
-    
-    # Create payment record
-    payment = PaymentHistory.objects.create(
-        employee=employee,
-        cycle_start=cycle_start,
-        cycle_end=cycle_end,
-    )
-    
+
+    if not created:
+        return Response(
+            {'error': 'Employee already marked as paid for this cycle'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
     return Response(
-        {
-            'id': payment.id,
-            'employee_id': employee.id,
-            'employee_name': employee.name,
-            'cycle_start': cycle_start.isoformat(),
-            'cycle_end': cycle_end.isoformat(),
-            'paid_at': payment.paid_at.isoformat(),
-        },
-        status=status.HTTP_201_CREATED
+        PaymentHistorySerializer(payment).data,
+        status=status.HTTP_201_CREATED,
     )
