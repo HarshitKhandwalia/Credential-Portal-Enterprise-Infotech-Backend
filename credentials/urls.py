@@ -5,6 +5,7 @@ from .views import (
     ChapterViewSet,
     EmployeeViewSet,
     SessionViewSet,
+    create_visitor_substitute,
     generate_QR_passes,
     health_check,
     scan_credential,
@@ -26,6 +27,11 @@ urlpatterns = [
     path('health/', health_check, name='health-check'),
     # Must be before the router so "scan" is not treated as a credential pk.
     path('credentials/scan/', scan_credential, name='scan-credential'),
+    path(
+        'sessions/<int:session_id>/visitor-substitute/create/',
+        create_visitor_substitute,
+        name='create-visitor-substitute',
+    ),
     path('', include(router.urls)),
     path('credentials/<int:pk>/send/', send_credential_invite, name='send-credential'),
     path(

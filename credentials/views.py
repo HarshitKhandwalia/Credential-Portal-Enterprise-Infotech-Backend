@@ -695,4 +695,37 @@ def scan_credential(request):
         status=status.HTTP_200_OK,
 
     ) 
+@api_view(['POST'])
+def create_visitor_substitute(request, session_id):
+    """
+    Endpoint: /sessions/<session_id>/visitor-substitute/create/
+    Creates a visitor or substitute record linked to a parent member.
+    """
+    try:
+        session = Session.objects.get(pk=session_id)
+    except Session.DoesNotExist:
+        return Response({'error': 'Session not found'}, status=status.HTTP_404_NOT_FOUND)
 
+    parent_id = request.data.get('member_id')
+    try:
+        parent_user = EmployeeCredential.objects.get(pk=parent_id)
+    except EmployeeCredential.DoesNotExist:
+        return Response({'error': 'Parent member not found'}, status=status.HTTP_400_BAD_REQUEST)
+
+    entry_type = request.data.get('type', 'visitor')
+
+    # Save designation, linkedin, Website
+    child = EmployeeCredential.objects.create(
+        name=request.data.get('name'),
+        email=request.data.get('email'),
+        phone=request.data.get('phone'),
+        designation=request.data.get('designation'),
+        linkedin=request.data.get('linkedin'),
+        website=request.data.get('website'),
+        chapter=session.chapter,
+        parent_user=parent_user,
+        entry_type=entry_type,
+    )
+
+    serializer = EmployeeCredentialSerializer(child)
+    return Response(serializer.data, status=status.HTTP_201_CREATED)

@@ -59,8 +59,6 @@ class EmployeeCredential(models.Model):
     email = models.EmailField(blank=True, null=True)
     phone = models.CharField(max_length=30, blank=True, null=True)
     designation = models.CharField(max_length=255, blank=True, null=True)
-    
-    # Changed from URLField to CharField so URLs without 'http://' or 'https://' save without errors
     linkedin = models.CharField(max_length=500, blank=True, null=True)
     website = models.CharField(max_length=500, blank=True, null=True)
     
