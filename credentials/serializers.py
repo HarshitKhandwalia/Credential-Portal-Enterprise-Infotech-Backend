@@ -154,6 +154,11 @@ class EmployeeCredentialSerializer(serializers.ModelSerializer):
         email = attrs.get('email', getattr(self.instance, 'email', None) if self.instance else None)
         phone = attrs.get('phone', getattr(self.instance, 'phone', None) if self.instance else None)
 
+        request = self.context.get('request')
+        profile = getattr(getattr(request, 'user', None), 'staff_profile', None)
+        if profile is not None and profile.role == 'chapter_admin' and profile.chapter_id:
+            attrs['chapter'] = profile.chapter
+
         if self.instance is None:
             if not attrs.get('email') and not attrs.get('phone'):
                 raise serializers.ValidationError(

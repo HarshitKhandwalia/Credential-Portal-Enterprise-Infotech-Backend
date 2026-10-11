@@ -7,9 +7,17 @@ from .models import (
     ScanLog,
     Session,
     SessionAttendance,
+    StaffProfile,
     Substitute,
     Visitor,
 )
+
+
+@admin.register(StaffProfile)
+class StaffProfileAdmin(admin.ModelAdmin):
+    list_display = ['name', 'role', 'chapter', 'user']
+    search_fields = ['name', 'user__email']
+    list_filter = ['role', 'chapter']
 
 
 @admin.register(Chapter)

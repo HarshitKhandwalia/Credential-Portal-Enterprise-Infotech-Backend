@@ -3,6 +3,7 @@ Django settings for core project.
 """
 
 import os
+from datetime import timedelta
 from pathlib import Path
 
 from django.core.exceptions import ImproperlyConfigured
@@ -52,9 +53,33 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
+    'rest_framework_simplejwt.token_blacklist',
     'corsheaders',
     'credentials',
 ]
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
+    'DEFAULT_PERMISSION_CLASSES': (
+        'credentials.permissions.IsActiveStaff',
+    ),
+    'DEFAULT_THROTTLE_RATES': {
+        'login': '5/min',
+    },
+}
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=int(_env('JWT_ACCESS_MINUTES', '15'))),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=int(_env('JWT_REFRESH_DAYS', '7'))),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
+    'AUTH_HEADER_TYPES': ('Bearer',),
+}
+
+SUPERADMIN_EMAIL = _env('SUPERADMIN_EMAIL')
+SUPERADMIN_PASSWORD = _env('SUPERADMIN_PASSWORD')
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',

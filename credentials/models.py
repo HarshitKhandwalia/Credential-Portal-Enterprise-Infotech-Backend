@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 
 from .utils import format_cycle_display, generate_unique_credential
@@ -14,6 +15,44 @@ class Chapter(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class StaffProfile(models.Model):
+    ROLE_SUPERADMIN = 'superadmin'
+    ROLE_CHAPTER_ADMIN = 'chapter_admin'
+    ROLE_CHOICES = [
+        (ROLE_SUPERADMIN, 'Superadmin'),
+        (ROLE_CHAPTER_ADMIN, 'Chapter admin'),
+    ]
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='staff_profile',
+    )
+    name = models.CharField(max_length=255)
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES)
+    chapter = models.ForeignKey(
+        Chapter,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='staff',
+    )
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                name='staff_profile_chapter_matches_role',
+                condition=(
+                    models.Q(role='superadmin', chapter__isnull=True)
+                    | models.Q(role='chapter_admin', chapter__isnull=False)
+                ),
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.name} ({self.role})'
 
 
 class Session(models.Model):

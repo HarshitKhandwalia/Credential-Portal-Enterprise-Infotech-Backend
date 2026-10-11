@@ -1,6 +1,7 @@
 from django.http import HttpResponse
 from rest_framework import status
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from .models import EmployeeCredential, Substitute, Visitor
@@ -60,6 +61,7 @@ def _get_pass_subject_from_wallet_token(token, platform):
 
 
 @api_view(['GET'])
+@permission_classes([AllowAny])
 def wallet_apple_detail(request, token):
     subject = _get_pass_subject_from_wallet_token(token, 'apple')
     if isinstance(subject, WalletTokenError):
@@ -69,6 +71,7 @@ def wallet_apple_detail(request, token):
 
 
 @api_view(['POST'])
+@permission_classes([AllowAny])
 def wallet_apple_generate(request, token):
     subject = _get_pass_subject_from_wallet_token(token, 'apple')
     if isinstance(subject, WalletTokenError):
@@ -90,6 +93,7 @@ def wallet_apple_generate(request, token):
 
 
 @api_view(['GET'])
+@permission_classes([AllowAny])
 def wallet_google_detail(request, token):
     subject = _get_pass_subject_from_wallet_token(token, 'google')
     if isinstance(subject, WalletTokenError):
@@ -99,6 +103,7 @@ def wallet_google_detail(request, token):
 
 
 @api_view(['POST'])
+@permission_classes([AllowAny])
 def wallet_google_generate(request, token):
     subject = _get_pass_subject_from_wallet_token(token, 'google')
     if isinstance(subject, WalletTokenError):

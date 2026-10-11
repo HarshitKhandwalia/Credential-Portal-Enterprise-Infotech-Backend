@@ -1,6 +1,15 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
+from rest_framework_simplejwt.views import TokenRefreshView
 
+from .auth_views import (
+    ChangePasswordView,
+    LoginView,
+    LogoutView,
+    MeView,
+    StaffDetailView,
+    StaffListCreateView,
+)
 from .views import (
     ChapterViewSet,
     EmployeeViewSet,
@@ -31,6 +40,13 @@ router.register(r'credentials', EmployeeViewSet, basename='credential')
 
 urlpatterns = [
     path('health/', health_check, name='health-check'),
+    path('auth/login/', LoginView.as_view(), name='auth-login'),
+    path('auth/refresh/', TokenRefreshView.as_view(), name='auth-refresh'),
+    path('auth/logout/', LogoutView.as_view(), name='auth-logout'),
+    path('auth/me/', MeView.as_view(), name='auth-me'),
+    path('auth/change-password/', ChangePasswordView.as_view(), name='auth-change-password'),
+    path('staff/', StaffListCreateView.as_view(), name='staff-list'),
+    path('staff/<int:pk>/', StaffDetailView.as_view(), name='staff-detail'),
     # Must be before the router so "scan" is not treated as a credential pk.
     path('credentials/scan/', scan_credential, name='scan-credential'),
     path('', include(router.urls)),

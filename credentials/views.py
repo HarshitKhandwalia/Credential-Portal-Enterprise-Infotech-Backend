@@ -4,8 +4,11 @@ from django.db import IntegrityError
 from django.db.models import Prefetch
 from django.utils import timezone
 from rest_framework import status, viewsets
-from rest_framework.decorators import action, api_view
+from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+
+from .permissions import IsSuperadmin, scope_by_chapter, scope_chapters
 
 from .delivery import deliver_wallet_links
 from .models import (
@@ -50,7 +53,39 @@ from .wallet_tokens import (
 )
 
 
+def _scoped_session(request, session_id):
+    return scope_by_chapter(
+        Session.objects.select_related('chapter'),
+        request.user,
+    ).filter(pk=session_id).first()
+
+
+def _scoped_employee(request, employee_id):
+    return scope_by_chapter(
+        EmployeeCredential.objects.select_related('chapter'),
+        request.user,
+    ).filter(pk=employee_id).first()
+
+
+def _scoped_chapter(request, chapter_id):
+    return scope_chapters(Chapter.objects.all(), request.user).filter(pk=chapter_id).first()
+
+
+def _session_not_found():
+    return Response(
+        {
+            'status': 'INVALID',
+            'message': 'Session not found',
+            'type': None,
+            'employee': None,
+            'data': None,
+        },
+        status=status.HTTP_404_NOT_FOUND,
+    )
+
+
 @api_view(['GET'])
+@permission_classes([AllowAny])
 def health_check(request):
     return Response({'status': 'ok'})
 
@@ -58,8 +93,13 @@ def health_check(request):
 class ChapterViewSet(viewsets.ModelViewSet):
     serializer_class = ChapterSerializer
 
+    def get_permissions(self):
+        if self.action in ('create', 'update', 'partial_update', 'destroy'):
+            return [IsSuperadmin()]
+        return super().get_permissions()
+
     def get_queryset(self):
-        qs = Chapter.objects.all().order_by('name')
+        qs = scope_chapters(Chapter.objects.all(), self.request.user).order_by('name')
         is_active = self.request.query_params.get('is_active')
         if is_active is not None:
             value = is_active.strip().lower()
@@ -146,9 +186,14 @@ class ChapterViewSet(viewsets.ModelViewSet):
 
 
 class SessionViewSet(viewsets.ModelViewSet):
-    queryset = Session.objects.select_related('chapter').all().order_by('-starts_at')
     serializer_class = SessionSerializer
     http_method_names = ['get', 'patch', 'put', 'delete', 'head', 'options']
+
+    def get_queryset(self):
+        return scope_by_chapter(
+            Session.objects.select_related('chapter').all(),
+            self.request.user,
+        ).order_by('-starts_at')
 
     @action(detail=True, methods=['get'], url_path='report')
     def report(self, request, pk=None):
@@ -178,11 +223,13 @@ class SessionViewSet(viewsets.ModelViewSet):
 
 
 class EmployeeViewSet(viewsets.ModelViewSet):
-    queryset = EmployeeCredential.objects.select_related('chapter').all().order_by('-created_at')
     serializer_class = EmployeeCredentialSerializer
 
     def get_queryset(self):
-        qs = super().get_queryset()
+        qs = scope_by_chapter(
+            EmployeeCredential.objects.select_related('chapter').all().order_by('-created_at'),
+            self.request.user,
+        )
         if self.action == 'list':
             qs = qs.prefetch_related(
                 Prefetch(
@@ -215,9 +262,8 @@ def generate_QR_passes(request, pk):
     Omitted channels means email only, matching existing clients.
     When channels is sent, both results are returned even if one fails.
     """
-    try:
-        employee = EmployeeCredential.objects.get(pk=pk)
-    except EmployeeCredential.DoesNotExist:
+    employee = _scoped_employee(request, pk)
+    if employee is None:
         return Response(
             {'error': 'Credential not found'},
             status=status.HTTP_404_NOT_FOUND,
@@ -265,9 +311,8 @@ def generate_QR_passes(request, pk):
 
 @api_view(['POST'])
 def send_credential_invite(request, pk):
-    try:
-        employee = EmployeeCredential.objects.get(pk=pk)
-    except EmployeeCredential.DoesNotExist:
+    employee = _scoped_employee(request, pk)
+    if employee is None:
         return Response({'error': 'Credential not found'}, status=status.HTTP_404_NOT_FOUND)
 
     # Only overwrite contact fields when the client sends a non-empty value.
@@ -331,18 +376,11 @@ def scan_credential(request):
         )
 
     try:
-        session = Session.objects.select_related('chapter').get(pk=session_id)
-    except (Session.DoesNotExist, ValueError, TypeError):
-        return Response(
-            {
-                'status': 'INVALID',
-                'message': 'Session not found',
-                'type': None,
-                'employee': None,
-                'data': None,
-            },
-            status=status.HTTP_400_BAD_REQUEST,
-        )
+        session = _scoped_session(request, session_id)
+    except (ValueError, TypeError):
+        session = None
+    if session is None:
+        return _session_not_found()
 
     if session.status == 'cancelled':
         return Response(
@@ -550,9 +588,8 @@ def create_visitor_substitute(request, session_id):
     Create a visitor or substitute for a session
     Input: {"type": "visitor"|"substitute", "name": "...", "email": "...", "phone": "..."}
     """
-    try:
-        session = Session.objects.get(id=session_id)
-    except Session.DoesNotExist:
+    session = _scoped_session(request, session_id)
+    if session is None:
         return Response({'error': 'Session not found'}, status=status.HTTP_404_NOT_FOUND)
 
     serializer = VisitorSubstituteCreateSerializer(data=request.data)
@@ -569,9 +606,8 @@ def create_visitor_substitute(request, session_id):
     if not member_id:
         return Response({'error': 'member_id required'}, status=status.HTTP_400_BAD_REQUEST)
 
-    try:
-        member = EmployeeCredential.objects.get(id=member_id)
-    except EmployeeCredential.DoesNotExist:
+    member = _scoped_employee(request, member_id)
+    if member is None or member.chapter_id != session.chapter_id:
         return Response({'error': 'Member not found'}, status=status.HTTP_404_NOT_FOUND)
 
     try:
@@ -608,9 +644,8 @@ def send_visitor_substitute_passes(request, session_id, pk):
     Omitted channels means email only. When channels is sent, both results
     are returned even if one fails.
     """
-    try:
-        session = Session.objects.get(id=session_id)
-    except Session.DoesNotExist:
+    session = _scoped_session(request, session_id)
+    if session is None:
         return Response({'error': 'Session not found'}, status=status.HTTP_404_NOT_FOUND)
 
     serializer = VisitorSubstituteSendSerializer(data=request.data)
@@ -685,9 +720,8 @@ def delete_visitor_substitute(request, session_id, pk):
     Delete a visitor or substitute for a session.
     Body: {"type": "visitor"|"substitute"}
     """
-    try:
-        session = Session.objects.get(id=session_id)
-    except Session.DoesNotExist:
+    session = _scoped_session(request, session_id)
+    if session is None:
         return Response({'error': 'Session not found'}, status=status.HTTP_404_NOT_FOUND)
 
     serializer = VisitorSubstituteSendSerializer(data=request.data)
@@ -726,9 +760,8 @@ def scan_visitor_substitute(request, session_id, credential):
     Scan a visitor or substitute credential
     Input: {"device_id": "gate-1"}
     """
-    try:
-        session = Session.objects.get(id=session_id)
-    except Session.DoesNotExist:
+    session = _scoped_session(request, session_id)
+    if session is None:
         return Response({'error': 'Session not found'}, status=status.HTTP_404_NOT_FOUND)
 
     device_id = request.data.get('device_id', None)
@@ -806,9 +839,8 @@ def payment_report(request, chapter_id):
 
     GET /api/chapters/{chapter_id}/payment-report/?cycle_start=2026-09-01
     """
-    try:
-        chapter = Chapter.objects.get(id=chapter_id)
-    except Chapter.DoesNotExist:
+    chapter = _scoped_chapter(request, chapter_id)
+    if chapter is None:
         return Response({'error': 'Chapter not found'}, status=status.HTTP_404_NOT_FOUND)
 
     cycle_start_str = request.query_params.get('cycle_start')
@@ -886,9 +918,8 @@ def mark_employee_paid(request, employee_id):
     POST /api/credentials/{employee_id}/mark-paid/
     Body: {} (no body needed, uses current cycle)
     """
-    try:
-        employee = EmployeeCredential.objects.get(id=employee_id)
-    except EmployeeCredential.DoesNotExist:
+    employee = _scoped_employee(request, employee_id)
+    if employee is None:
         return Response({'error': 'Employee not found'}, status=status.HTTP_404_NOT_FOUND)
 
     cycle_start, cycle_end = get_current_cycle()
