@@ -13,7 +13,8 @@ from .models import (
     Visitor,
 )
 from .utils import format_cycle_display
-
+import csv
+from io import StringIO, TextIOWrapper
 
 class ChapterSerializer(serializers.ModelSerializer):
     class Meta:
@@ -348,3 +349,69 @@ class PaymentReportSerializer(serializers.Serializer):
     unpaid_count = serializers.IntegerField()
     paid = EmployeeSummarySerializer(many=True)
     unpaid = EmployeeSummarySerializer(many=True)
+
+class BulkEmployeeUploadSerializer(serializers.Serializer):
+    """
+    Handles bulk CSV upload for employees.
+    CSV format: first_name, last_name, phone, email, membership_id
+    """
+    file = serializers.FileField()
+    chapter_id = serializers.IntegerField()
+
+    def validate_file(self, value):
+        """Validate that file is CSV"""
+        if not value.name.endswith('.csv'):
+            raise serializers.ValidationError("File must be a CSV file.")
+        return value
+
+    def validate_chapter_id(self, value):
+        """Validate chapter exists"""
+        try:
+            Chapter.objects.get(pk=value)
+        except Chapter.DoesNotExist:
+            raise serializers.ValidationError("Chapter does not exist.")
+        return value
+
+class BulkUploadRowSerializer(serializers.Serializer):
+    """Serializer for individual CSV rows"""
+    first_name = serializers.CharField(max_length=255, required=True)
+    last_name = serializers.CharField(max_length=255, required=True)
+    phone = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    email = serializers.EmailField(required=False, allow_blank=True, allow_null=True)
+    membership_id = serializers.CharField(max_length=100, required=True)
+
+    def validate_phone(self, value):
+        """Validate phone format"""
+        if not value:
+            return None
+        cleaned_phone = re.sub(r'[\s\-\(\)]', '', value)
+        if not cleaned_phone:
+            return None
+        phone_regex = r'^\+?[1-9]\d{6,14}$'
+        if not re.match(phone_regex, cleaned_phone):
+            raise serializers.ValidationError(
+                "Invalid phone number. Use format like +917981557871"
+            )
+        return cleaned_phone
+
+    def validate_email(self, value):
+        """Validate email format"""
+        if not value:
+            return None
+        normalized_email = value.strip().lower()
+        if not normalized_email:
+            return None
+        email_regex = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        if not re.match(email_regex, normalized_email):
+            raise serializers.ValidationError("Invalid email format.")
+        return normalized_email
+
+    def validate(self, attrs):
+        """At least one contact method required"""
+        email = attrs.get('email')
+        phone = attrs.get('phone')
+        if not email and not phone:
+            raise serializers.ValidationError(
+                "At least one contact method (Email or Phone) is required."
+            )
+        return attrs

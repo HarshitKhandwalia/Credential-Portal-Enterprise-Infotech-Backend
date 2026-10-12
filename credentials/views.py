@@ -1,10 +1,13 @@
+import csv
 from datetime import datetime
+from io import TextIOWrapper
 
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from django.db.models import Prefetch
 from django.utils import timezone
 from rest_framework import status, viewsets
-from rest_framework.decorators import action, api_view
+from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from .delivery import deliver_wallet_links
@@ -19,6 +22,8 @@ from .models import (
     Visitor,
 )
 from .serializers import (
+    BulkEmployeeUploadSerializer,
+    BulkUploadRowSerializer,
     ChapterSerializer,
     EmployeeCredentialListSerializer,
     EmployeeCredentialSerializer,
@@ -48,7 +53,6 @@ from .wallet_tokens import (
     build_employee_wallet_urls,
     build_wallet_urls,
 )
-
 
 @api_view(['GET'])
 def health_check(request):
@@ -915,3 +919,168 @@ def mark_employee_paid(request, employee_id):
         PaymentHistorySerializer(payment).data,
         status=status.HTTP_201_CREATED,
     )
+
+@api_view(['POST'])
+@permission_classes([])  # Temporarily disable auth
+def bulk_upload_employees(request):
+    """
+    Bulk upload employees via CSV.
+    
+    POST body:
+    - file: CSV file
+    - chapter_id: integer
+    
+    CSV format (header row required):
+    first_name,last_name,phone,email,membership_id
+    
+    Returns:
+    {
+        "success": true/false,
+        "total_rows": 10,
+        "created_count": 8,
+        "failed_count": 2,
+        "results": [
+            {
+                "row": 1,
+                "status": "success",
+                "membership_id": "MEM001",
+                "credential": "ABC123",
+                "message": "Employee created successfully"
+            },
+            ...
+        ]
+    }
+    """
+    serializer = BulkEmployeeUploadSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(
+            {"success": False, "errors": serializer.errors},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    csv_file = serializer.validated_data['file']
+    chapter_id = serializer.validated_data['chapter_id']
+
+    try:
+        # Read CSV
+        text_file = TextIOWrapper(csv_file.file, encoding='utf-8')
+        csv_reader = csv.DictReader(text_file)
+
+        if csv_reader.fieldnames is None:
+            return Response(
+                {"success": False, "message": "CSV file is empty"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Validate header row
+        required_fields = {'first_name', 'last_name', 'membership_id'}
+        if not required_fields.issubset(set(csv_reader.fieldnames or [])):
+            return Response(
+                {
+                    "success": False,
+                    "message": f"CSV must contain headers: {', '.join(required_fields)}",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        results = []
+        created_count = 0
+        failed_count = 0
+        row_num = 1
+
+        chapter = Chapter.objects.get(pk=chapter_id)
+
+        with transaction.atomic():
+            for row in csv_reader:
+                row_num += 1  # +1 for header row
+                
+                # Clean up row data
+                row_data = {
+                    'first_name': (row.get('first_name') or '').strip(),
+                    'last_name': (row.get('last_name') or '').strip(),
+                    'phone': (row.get('phone') or '').strip() or None,
+                    'email': (row.get('email') or '').strip() or None,
+                    'membership_id': (row.get('membership_id') or '').strip(),
+                }
+
+                # Validate row
+                row_serializer = BulkUploadRowSerializer(data=row_data)
+                
+                if not row_serializer.is_valid():
+                    failed_count += 1
+                    error_msg = '; '.join(
+                        [f"{field}: {', '.join(msgs)}" for field, msgs in row_serializer.errors.items()]
+                    )
+                    results.append({
+                        'row': row_num,
+                        'status': 'error',
+                        'membership_id': row_data['membership_id'],
+                        'message': error_msg,
+                    })
+                    continue
+
+                validated_data = row_serializer.validated_data
+
+                # Check for duplicate membership_id
+                if EmployeeCredential.objects.filter(
+                    membership_id=validated_data['membership_id']
+                ).exists():
+                    failed_count += 1
+                    results.append({
+                        'row': row_num,
+                        'status': 'error',
+                        'membership_id': validated_data['membership_id'],
+                        'message': f"Membership ID already exists in system",
+                    })
+                    continue
+
+                try:
+                    # Create employee
+                    full_name = f"{validated_data['first_name']} {validated_data['last_name']}"
+                    
+                    employee = EmployeeCredential.objects.create(
+                        name=full_name,
+                        membership_id=validated_data['membership_id'],
+                        email=validated_data.get('email'),
+                        phone=validated_data.get('phone'),
+                        chapter=chapter,
+                        status='not_invited',
+                    )
+
+                    created_count += 1
+                    results.append({
+                        'row': row_num,
+                        'status': 'success',
+                        'membership_id': validated_data['membership_id'],
+                        'credential': employee.credential,
+                        'message': 'Employee created successfully',
+                    })
+
+                except Exception as e:
+                    failed_count += 1
+                    results.append({
+                        'row': row_num,
+                        'status': 'error',
+                        'membership_id': validated_data['membership_id'],
+                        'message': f"Database error: {str(e)}",
+                    })
+
+        return Response(
+            {
+                "success": True,
+                "total_rows": row_num - 1,  # Subtract header
+                "created_count": created_count,
+                "failed_count": failed_count,
+                "results": results,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+    except Exception as e:
+        return Response(
+            {
+                "success": False,
+                "message": f"Error processing file: {str(e)}",
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )

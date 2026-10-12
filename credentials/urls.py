@@ -16,6 +16,7 @@ from .views import (
     payment_report,
     get_cycles_for_dropdown,
     mark_employee_paid,
+    bulk_upload_employees,
 )
 from .wallet_views import (
     wallet_apple_detail,
@@ -33,7 +34,6 @@ urlpatterns = [
     path('health/', health_check, name='health-check'),
     # Must be before the router so "scan" is not treated as a credential pk.
     path('credentials/scan/', scan_credential, name='scan-credential'),
-    path('', include(router.urls)),
     path('credentials/<int:pk>/send/', send_credential_invite, name='send-credential'),
     path(
         'credentials/<int:pk>/generate-qr-passes/',
@@ -76,4 +76,8 @@ urlpatterns = [
     path('chapters/<int:chapter_id>/payment-report/', payment_report, name='payment-report'),
     path('cycles-dropdown/', get_cycles_for_dropdown, name='cycles-dropdown'),
     path('credentials/<int:employee_id>/mark-paid/', mark_employee_paid, name='mark-paid'),
+    path('health/', health_check, name='health-check'),
+    path('credentials/scan/', scan_credential, name='scan-credential'),
+    path('credentials/bulk-upload/', bulk_upload_employees, name='bulk-upload-employees'),  # ← ADD THIS
+    path('', include(router.urls)),
 ]
