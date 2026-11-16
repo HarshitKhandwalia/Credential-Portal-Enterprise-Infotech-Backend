@@ -18,10 +18,16 @@ class PassSubject:
     card_title: str
 
 
+def build_member_profile_url(employee):
+    """Frontend profile URL encoded into member wallet barcodes."""
+    base_url = settings.FRONTEND_BASE_URL.rstrip('/')
+    return f'{base_url}/profile/{employee.profile_token}'
+
+
 def pass_subject_from_employee(employee):
     return PassSubject(
         name=employee.name,
-        credential=employee.credential,
+        credential=build_member_profile_url(employee),
         membership_id=employee.membership_id,
         card_title=CARD_TITLE_MEMBER,
     )

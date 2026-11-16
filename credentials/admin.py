@@ -46,9 +46,9 @@ class EmployeeCredentialAdmin(admin.ModelAdmin):
         'is_attended',
         'created_at',
     ]
-    search_fields = ['name', 'membership_id', 'credential', 'email']
+    search_fields = ['name', 'membership_id', 'credential', 'email', 'company_name', 'profile_token']
     list_filter = ['chapter', 'status']
-    readonly_fields = ['credential', 'created_at', 'attended_at']
+    readonly_fields = ['credential', 'profile_token', 'created_at', 'attended_at']
 
 
 @admin.register(ScanLog)

@@ -88,11 +88,16 @@ class RecurringSessionCreateSerializer(serializers.Serializer):
 class EmployeeCredentialSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(required=False, allow_blank=True, allow_null=True)
     phone = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    company_name = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    linkedin_url = serializers.URLField(required=False, allow_blank=True, allow_null=True)
+    website_url = serializers.URLField(required=False, allow_blank=True, allow_null=True)
     credential = serializers.CharField(read_only=True)
+    membership_id = serializers.CharField(read_only=True)
+    profile_token = serializers.CharField(read_only=True)
     chapter = serializers.PrimaryKeyRelatedField(
         queryset=Chapter.objects.all(),
         required=False,
-        allow_null=False,
+        allow_null=True,
     )
     chapter_name = serializers.CharField(source='chapter.name', read_only=True, default=None)
     formatted_created_at = serializers.SerializerMethodField()
@@ -104,9 +109,13 @@ class EmployeeCredentialSerializer(serializers.ModelSerializer):
             'name',
             'membership_id',
             'credential',
+            'profile_token',
             'status',
             'email',
             'phone',
+            'company_name',
+            'linkedin_url',
+            'website_url',
             'primary_credential',
             'secondary_credential',
             'chapter',
@@ -116,7 +125,13 @@ class EmployeeCredentialSerializer(serializers.ModelSerializer):
             'is_attended',
             'attended_at',
         ]
-        read_only_fields = ['credential', 'is_attended', 'attended_at']
+        read_only_fields = [
+            'credential',
+            'membership_id',
+            'profile_token',
+            'is_attended',
+            'attended_at',
+        ]
 
     def get_formatted_created_at(self, obj):
         return obj.created_at.strftime("%m/%d/%Y, %I:%M %p")
@@ -151,6 +166,24 @@ class EmployeeCredentialSerializer(serializers.ModelSerializer):
 
         return cleaned_phone
 
+    def validate_company_name(self, value):
+        if not value:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
+
+    def validate_linkedin_url(self, value):
+        if not value:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
+
+    def validate_website_url(self, value):
+        if not value:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
+
     def validate(self, attrs):
         email = attrs.get('email', getattr(self.instance, 'email', None) if self.instance else None)
         phone = attrs.get('phone', getattr(self.instance, 'phone', None) if self.instance else None)
@@ -160,8 +193,6 @@ class EmployeeCredentialSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     {"non_field_errors": ["At least one contact method (Email or Phone Number) is required."]}
                 )
-            if 'chapter' not in attrs or attrs.get('chapter') is None:
-                raise serializers.ValidationError({'chapter': 'Chapter is required.'})
         else:
             # On update, only enforce contact if both would become empty.
             if email is None and phone is None:
@@ -176,6 +207,21 @@ class EmployeeSummarySerializer(serializers.ModelSerializer):
     class Meta:
         model = EmployeeCredential
         fields = ['id', 'name', 'membership_id', 'credential', 'email', 'phone']
+
+
+class MemberProfileSerializer(serializers.ModelSerializer):
+    """Public member profile resolved by profile_token."""
+
+    class Meta:
+        model = EmployeeCredential
+        fields = [
+            'name',
+            'email',
+            'phone',
+            'company_name',
+            'linkedin_url',
+            'website_url',
+        ]
 
 
 class SessionAttendanceSerializer(serializers.ModelSerializer):

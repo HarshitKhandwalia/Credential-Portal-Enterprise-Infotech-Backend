@@ -31,6 +31,7 @@ from .serializers import (
     EmployeeCredentialListSerializer,
     EmployeeCredentialSerializer,
     EmployeeSummarySerializer,
+    MemberProfileSerializer,
     PaymentHistorySerializer,
     PaymentReportSerializer,
     RecurringSessionCreateSerializer,
@@ -275,6 +276,20 @@ class EmployeeViewSet(viewsets.ModelViewSet):
 
 def get_view_name(self):
     return "Credentials list"
+
+
+@api_view(['GET'])
+def member_profile_by_token(request, token):
+    """
+    Public member profile lookup by profile_token.
+    Returns name, email, phone, company_name, linkedin_url, website_url.
+    """
+    try:
+        employee = EmployeeCredential.objects.get(profile_token=token)
+    except EmployeeCredential.DoesNotExist:
+        return Response({'error': 'Profile not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    return Response(MemberProfileSerializer(employee).data)
 
 
 @api_view(['POST'])

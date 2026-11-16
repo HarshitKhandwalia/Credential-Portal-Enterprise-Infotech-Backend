@@ -1,6 +1,10 @@
 from django.db import models
 
-from .utils import format_cycle_display, generate_unique_credential
+from .utils import (
+    format_cycle_display,
+    generate_unique_credential,
+    generate_unique_profile_token,
+)
 
 
 class Chapter(models.Model):
@@ -56,9 +60,13 @@ class EmployeeCredential(models.Model):
     name = models.CharField(max_length=255)
     membership_id = models.CharField(max_length=100, unique=True)
     credential = models.CharField(max_length=6, unique=True, editable=False)
+    profile_token = models.CharField(max_length=64, unique=True, editable=False)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='not_invited')
     email = models.EmailField(blank=True, null=True)
     phone = models.CharField(max_length=30, blank=True, null=True)
+    company_name = models.CharField(max_length=255, blank=True, null=True)
+    linkedin_url = models.URLField(blank=True, null=True)
+    website_url = models.URLField(blank=True, null=True)
     primary_credential = models.CharField(max_length=50, choices=PRIMARY_CREDENTIAL_CHOICES, default='QR')
     secondary_credential = models.CharField(max_length=50, choices=SECONDARY_CREDENTIAL_CHOICES, default='Email')
     created_at = models.DateTimeField(auto_now_add=True)
@@ -77,6 +85,11 @@ class EmployeeCredential(models.Model):
     def save(self, *args, **kwargs):
         if not self.credential:
             self.credential = generate_unique_credential()
+        if not self.profile_token:
+            self.profile_token = generate_unique_profile_token()
+        # Membership id is the same as the auto-generated 6-digit credential.
+        if not self.membership_id:
+            self.membership_id = self.credential
         super().save(*args, **kwargs)
 
     def __str__(self):

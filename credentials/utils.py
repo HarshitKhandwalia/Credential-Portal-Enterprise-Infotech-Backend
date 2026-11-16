@@ -17,6 +17,16 @@ def generate_unique_credential():
             return code
 
 
+def generate_unique_profile_token():
+    """Return a long random token unique across all EmployeeCredential records."""
+    from .models import EmployeeCredential
+
+    while True:
+        token = secrets.token_urlsafe(32)
+        if not EmployeeCredential.objects.filter(profile_token=token).exists():
+            return token
+
+
 def format_session_title(series_title: str, starts_at: datetime) -> str:
     """Build per-occurrence title: '{series} — 8 Sep 2026'."""
     base = (series_title or '').strip() or 'Session'

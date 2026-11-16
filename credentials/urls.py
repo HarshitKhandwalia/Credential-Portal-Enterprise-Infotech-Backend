@@ -8,6 +8,7 @@ from .views import (
     TemplateViewSet,
     generate_QR_passes,
     health_check,
+    member_profile_by_token,
     scan_credential,
     send_credential_invite,
     create_visitor_substitute,
@@ -37,6 +38,7 @@ urlpatterns = [
     path('upload/', upload_media, name='upload-media'),
     # Must be before the router so "scan" is not treated as a credential pk.
     path('credentials/scan/', scan_credential, name='scan-credential'),
+    path('profile/<str:token>/', member_profile_by_token, name='member-profile-by-token'),
     path('', include(router.urls)),
     path('credentials/<int:pk>/send/', send_credential_invite, name='send-credential'),
     path(
