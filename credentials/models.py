@@ -248,3 +248,21 @@ class PaymentHistory(models.Model):
 
     def __str__(self):
         return f"{self.employee.name} paid for {format_cycle_display(self.cycle_start, self.cycle_end)}"
+
+
+class Template(models.Model):
+    """
+    Standalone wallet pass styling template.
+    apple / google are full platform sections (or null); image fields store public URLs.
+    """
+    name = models.CharField(max_length=255)
+    apple = models.JSONField(null=True, blank=True)
+    google = models.JSONField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return self.name

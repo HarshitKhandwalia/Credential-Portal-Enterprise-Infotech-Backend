@@ -5,6 +5,7 @@ from .views import (
     ChapterViewSet,
     EmployeeViewSet,
     SessionViewSet,
+    TemplateViewSet,
     generate_QR_passes,
     health_check,
     scan_credential,
@@ -16,6 +17,7 @@ from .views import (
     payment_report,
     get_cycles_for_dropdown,
     mark_employee_paid,
+    upload_media,
 )
 from .wallet_views import (
     wallet_apple_detail,
@@ -28,9 +30,11 @@ router = DefaultRouter()
 router.register(r'chapters', ChapterViewSet, basename='chapter')
 router.register(r'sessions', SessionViewSet, basename='session')
 router.register(r'credentials', EmployeeViewSet, basename='credential')
+router.register(r'templates', TemplateViewSet, basename='template')
 
 urlpatterns = [
     path('health/', health_check, name='health-check'),
+    path('upload/', upload_media, name='upload-media'),
     # Must be before the router so "scan" is not treated as a credential pk.
     path('credentials/scan/', scan_credential, name='scan-credential'),
     path('', include(router.urls)),

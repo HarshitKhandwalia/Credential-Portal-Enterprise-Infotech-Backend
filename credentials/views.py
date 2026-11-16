@@ -1,12 +1,19 @@
 from datetime import datetime
 
+from django.core.exceptions import ImproperlyConfigured
 from django.db import IntegrityError
 from django.db.models import Prefetch
 from django.utils import timezone
 from rest_framework import status, viewsets
-from rest_framework.decorators import action, api_view
+from rest_framework.decorators import action, api_view, parser_classes
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 
+from .cloudinary_client import (
+    CloudinaryUploadError,
+    upload_image,
+    upload_template_data,
+)
 from .delivery import deliver_wallet_links
 from .models import (
     Chapter,
@@ -16,6 +23,7 @@ from .models import (
     Session,
     SessionAttendance,
     Substitute,
+    Template,
     Visitor,
 )
 from .serializers import (
@@ -28,6 +36,8 @@ from .serializers import (
     RecurringSessionCreateSerializer,
     SessionSerializer,
     SubstituteSerializer,
+    TemplateListSerializer,
+    TemplateSerializer,
     VisitorSerializer,
     VisitorSubstituteCreateSerializer,
     VisitorSubstituteSendSerializer,
@@ -53,6 +63,40 @@ from .wallet_tokens import (
 @api_view(['GET'])
 def health_check(request):
     return Response({'status': 'ok'})
+
+
+@api_view(['POST'])
+@parser_classes([MultiPartParser, FormParser])
+def upload_media(request):
+    """
+    Upload an image into a Cloudinary folder named after the template.
+    Multipart fields: ``file`` (required), ``template_name`` (required),
+    ``asset`` (optional stable name, e.g. icon / strip / logo / heroImage).
+    """
+    upload = request.FILES.get('file')
+    if not upload:
+        return Response({'error': 'file is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+    template_name = (request.data.get('template_name') or '').strip()
+    if not template_name:
+        return Response(
+            {'error': 'template_name is required'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    asset_name = (request.data.get('asset') or '').strip() or None
+    try:
+        result = upload_image(
+            upload,
+            template_name=template_name,
+            asset_name=asset_name,
+        )
+    except ImproperlyConfigured as exc:
+        return Response({'error': str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    except CloudinaryUploadError as exc:
+        return Response({'error': str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+
+    return Response(result, status=status.HTTP_201_CREATED)
 
 
 class ChapterViewSet(viewsets.ModelViewSet):
@@ -143,6 +187,33 @@ class ChapterViewSet(viewsets.ModelViewSet):
             },
             status=status.HTTP_201_CREATED,
         )
+
+
+class TemplateViewSet(viewsets.ModelViewSet):
+    serializer_class = TemplateSerializer
+    queryset = Template.objects.all().order_by('-created_at')
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return TemplateListSerializer
+        return TemplateSerializer
+
+    def _sync_template_folder(self, template):
+        """Write template.json into the Cloudinary folder for this template name."""
+        payload = TemplateSerializer(template).data
+        try:
+            return upload_template_data(template.name, payload)
+        except (ImproperlyConfigured, CloudinaryUploadError):
+            # DB write already succeeded; Cloudinary sync is best-effort.
+            return None
+
+    def perform_create(self, serializer):
+        template = serializer.save()
+        self._sync_template_folder(template)
+
+    def perform_update(self, serializer):
+        template = serializer.save()
+        self._sync_template_folder(template)
 
 
 class SessionViewSet(viewsets.ModelViewSet):

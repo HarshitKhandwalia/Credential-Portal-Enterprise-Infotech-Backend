@@ -8,6 +8,7 @@ from .models import (
     Session,
     SessionAttendance,
     Substitute,
+    Template,
     Visitor,
 )
 
@@ -80,3 +81,10 @@ class PaymentHistoryAdmin(admin.ModelAdmin):
     search_fields = ['employee__name', 'employee__membership_id']
     list_filter = ['cycle_start', 'employee__chapter']
     readonly_fields = ['paid_at']
+
+
+@admin.register(Template)
+class TemplateAdmin(admin.ModelAdmin):
+    list_display = ['name', 'created_at', 'updated_at']
+    search_fields = ['name']
+    readonly_fields = ['created_at', 'updated_at']

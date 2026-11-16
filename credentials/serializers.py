@@ -10,6 +10,7 @@ from .models import (
     Session,
     SessionAttendance,
     Substitute,
+    Template,
     Visitor,
 )
 from .utils import format_cycle_display
@@ -348,3 +349,97 @@ class PaymentReportSerializer(serializers.Serializer):
     unpaid_count = serializers.IntegerField()
     paid = EmployeeSummarySerializer(many=True)
     unpaid = EmployeeSummarySerializer(many=True)
+
+
+APPLE_TEMPLATE_KEYS = (
+    'foregroundColor',
+    'backgroundColor',
+    'labelColor',
+    'logoText',
+    'icon',
+    'strip',
+)
+GOOGLE_TEMPLATE_KEYS = (
+    'backgroundColor',
+    'cardTitle',
+    'heroImage',
+    'logo',
+)
+_URL_FIELDS = frozenset({'icon', 'strip', 'heroImage', 'logo'})
+
+
+def _validate_platform_section(value, required_keys, section_name):
+    """Require a complete platform object with exactly the expected non-empty string fields."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise serializers.ValidationError(
+            f'{section_name} must be an object or null.'
+        )
+
+    expected = set(required_keys)
+    actual = set(value.keys())
+    if actual != expected:
+        raise serializers.ValidationError(
+            f'All {section_name} fields are required; partial values are not allowed.'
+        )
+
+    cleaned = {}
+    for key in required_keys:
+        field_value = value[key]
+        if not isinstance(field_value, str) or not field_value.strip():
+            raise serializers.ValidationError(
+                f'All {section_name} fields are required; partial values are not allowed.'
+            )
+        field_value = field_value.strip()
+        if key in _URL_FIELDS:
+            url_field = serializers.URLField()
+            try:
+                field_value = url_field.run_validation(field_value)
+            except serializers.ValidationError:
+                raise serializers.ValidationError(
+                    {key: 'Must be a valid URL.'}
+                )
+        cleaned[key] = field_value
+    return cleaned
+
+
+class TemplateListSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Template
+        fields = ['id', 'name', 'created_at', 'updated_at']
+        read_only_fields = ['created_at', 'updated_at']
+
+
+class TemplateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Template
+        fields = ['id', 'name', 'apple', 'google', 'created_at', 'updated_at']
+        read_only_fields = ['created_at', 'updated_at']
+
+    def validate_apple(self, value):
+        return _validate_platform_section(value, APPLE_TEMPLATE_KEYS, 'apple')
+
+    def validate_google(self, value):
+        return _validate_platform_section(value, GOOGLE_TEMPLATE_KEYS, 'google')
+
+    def validate(self, attrs):
+        apple = attrs.get('apple', serializers.empty)
+        google = attrs.get('google', serializers.empty)
+
+        if self.instance is not None:
+            if apple is serializers.empty:
+                apple = self.instance.apple
+            if google is serializers.empty:
+                google = self.instance.google
+        else:
+            if apple is serializers.empty:
+                apple = None
+            if google is serializers.empty:
+                google = None
+
+        if apple is None and google is None:
+            raise serializers.ValidationError(
+                'At least one full platform section (apple or google) is required.'
+            )
+        return attrs
