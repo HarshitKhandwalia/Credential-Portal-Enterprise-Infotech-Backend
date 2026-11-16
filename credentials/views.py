@@ -297,8 +297,10 @@ def generate_QR_passes(request, pk):
     """
     Send wallet links for a member.
 
-    Body (optional): {"channels": ["email", "whatsapp"]}
+    Body (optional):
+      {"channels": ["email", "whatsapp"], "template_id": 1}
     Omitted channels means email only, matching existing clients.
+    template_id selects wallet styling; omitted uses hardcoded defaults.
     When channels is sent, both results are returned even if one fails.
     """
     try:
@@ -315,7 +317,8 @@ def generate_QR_passes(request, pk):
 
     channels = channel_serializer.validated_data.get('channels') or ['email']
     explicit_channels = 'channels' in channel_serializer.validated_data
-    wallet_urls = build_employee_wallet_urls(employee)
+    template_id = channel_serializer.validated_data.get('template_id')
+    wallet_urls = build_employee_wallet_urls(employee, template_id=template_id)
     delivery = deliver_wallet_links(
         name=employee.name,
         email=employee.email,
@@ -690,9 +693,13 @@ def send_visitor_substitute_passes(request, session_id, pk):
     """
     Send Apple/Google wallet links for a visitor or substitute.
 
-    Body: {"type": "visitor"|"substitute", "channels": ["email", "whatsapp"]}
-    Omitted channels means email only. When channels is sent, both results
-    are returned even if one fails.
+    Body: {
+      "type": "visitor"|"substitute",
+      "channels": ["email", "whatsapp"],
+      "template_id": 1
+    }
+    Omitted channels means email only. template_id selects wallet styling.
+    When channels is sent, both results are returned even if one fails.
     """
     try:
         session = Session.objects.get(id=session_id)
@@ -722,7 +729,8 @@ def send_visitor_substitute_passes(request, session_id, pk):
 
     channels = serializer.validated_data.get('channels') or ['email']
     explicit_channels = 'channels' in serializer.validated_data
-    wallet_urls = build_wallet_urls(pass_kind, entry.pk)
+    template_id = serializer.validated_data.get('template_id')
+    wallet_urls = build_wallet_urls(pass_kind, entry.pk, template_id=template_id)
     delivery = deliver_wallet_links(
         name=entry.name,
         email=entry.email,

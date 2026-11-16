@@ -23,14 +23,15 @@ def _get_signer():
     return TimestampSigner(salt=WALLET_SIGNER_SALT)
 
 
-def create_wallet_token(subject_kind, subject_id, platform):
-    return _get_signer().sign_object(
-        {
-            'kind': subject_kind,
-            'subject_id': subject_id,
-            'platform': platform,
-        },
-    )
+def create_wallet_token(subject_kind, subject_id, platform, template_id=None):
+    payload = {
+        'kind': subject_kind,
+        'subject_id': subject_id,
+        'platform': platform,
+    }
+    if template_id is not None:
+        payload['template_id'] = template_id
+    return _get_signer().sign_object(payload)
 
 
 def _get_wallet_token_expiry_seconds():
@@ -64,6 +65,7 @@ def verify_wallet_token(token, expected_platform):
     platform = payload.get('platform')
     subject_kind = payload.get('kind', PASS_KIND_EMPLOYEE)
     subject_id = payload.get('subject_id') or payload.get('employee_id')
+    template_id = payload.get('template_id')
 
     if platform != expected_platform:
         raise WalletTokenError(
@@ -77,13 +79,17 @@ def verify_wallet_token(token, expected_platform):
     if not subject_id:
         raise WalletTokenError('invalid', 'This wallet link is invalid.')
 
-    return subject_kind, subject_id
+    return subject_kind, subject_id, template_id
 
 
-def build_wallet_urls(subject_kind, subject_id):
+def build_wallet_urls(subject_kind, subject_id, template_id=None):
     base_url = _get_frontend_base_url()
-    apple_token = create_wallet_token(subject_kind, subject_id, 'apple')
-    google_token = create_wallet_token(subject_kind, subject_id, 'google')
+    apple_token = create_wallet_token(
+        subject_kind, subject_id, 'apple', template_id=template_id
+    )
+    google_token = create_wallet_token(
+        subject_kind, subject_id, 'google', template_id=template_id
+    )
 
     return {
         'apple': f'{base_url}/wallet/apple/{apple_token}',
@@ -91,5 +97,5 @@ def build_wallet_urls(subject_kind, subject_id):
     }
 
 
-def build_employee_wallet_urls(employee):
-    return build_wallet_urls(PASS_KIND_EMPLOYEE, employee.pk)
+def build_employee_wallet_urls(employee, template_id=None):
+    return build_wallet_urls(PASS_KIND_EMPLOYEE, employee.pk, template_id=template_id)

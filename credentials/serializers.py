@@ -326,6 +326,7 @@ class WalletChannelsSerializer(serializers.Serializer):
         required=False,
         allow_empty=False,
     )
+    template_id = serializers.IntegerField(required=False, allow_null=True)
 
     def validate_channels(self, value):
         normalized = []
@@ -338,6 +339,13 @@ class WalletChannelsSerializer(serializers.Serializer):
             if name not in normalized:
                 normalized.append(name)
         return normalized
+
+    def validate_template_id(self, value):
+        if value is None:
+            return None
+        if not Template.objects.filter(pk=value).exists():
+            raise serializers.ValidationError('Template not found.')
+        return value
 
 
 class VisitorSubstituteSendSerializer(WalletChannelsSerializer):

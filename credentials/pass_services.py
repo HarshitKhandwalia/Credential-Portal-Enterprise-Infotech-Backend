@@ -51,26 +51,47 @@ def pass_subject_from_substitute(substitute):
     )
 
 
-def _build_google_payload(subject):
-    return {
+def _template_section(template, platform):
+    if template is None:
+        return {}
+    section = getattr(template, platform, None)
+    return section if isinstance(section, dict) else {}
+
+
+def _build_google_payload(subject, template=None):
+    style = _template_section(template, 'google')
+    payload = {
         'name': subject.name,
         'credential': subject.credential,
         'membership_id': subject.membership_id,
-        'card_title': subject.card_title,
+        'card_title': style.get('cardTitle') or subject.card_title,
     }
+    if style.get('backgroundColor'):
+        payload['hex_background_color'] = style['backgroundColor']
+    if style.get('heroImage'):
+        payload['hero_image_uri'] = style['heroImage']
+    if style.get('logo'):
+        payload['logo_image_uri'] = style['logo']
+    return payload
 
 
-def _build_apple_payload(subject):
-    return {
-        'foregroundColor': 'rgb(255,255,255)',
-        'backgroundColor': 'rgb(196,36,42)',
-        'labelColor': 'rgb(255,255,255)',
+def _build_apple_payload(subject, template=None):
+    style = _template_section(template, 'apple')
+    payload = {
+        'foregroundColor': style.get('foregroundColor') or 'rgb(255,255,255)',
+        'backgroundColor': style.get('backgroundColor') or 'rgb(196,36,42)',
+        'labelColor': style.get('labelColor') or 'rgb(255,255,255)',
         'userName': subject.name,
         'membershipId': subject.membership_id,
         'barcodeMessage': subject.credential,
         'serialNumber': subject.membership_id,
-        'logoText': subject.card_title,
+        'logoText': style.get('logoText') or subject.card_title,
     }
+    if style.get('icon'):
+        payload['icon'] = style['icon']
+    if style.get('strip'):
+        payload['strip'] = style['strip']
+    return payload
 
 
 def _request_json_pass_service(url, payload):
@@ -122,16 +143,16 @@ def extract_pass_link(service_result):
     return None
 
 
-def generate_google_pass(subject):
+def generate_google_pass(subject, template=None):
     return _request_json_pass_service(
         f"{settings.GOOGLE_PASS_SERVICE_URL.rstrip('/')}/passes/qr",
-        _build_google_payload(subject),
+        _build_google_payload(subject, template=template),
     )
 
 
-def generate_apple_pass(subject):
+def generate_apple_pass(subject, template=None):
     url = f"{settings.APPLE_PASS_SERVICE_URL.rstrip('/')}/generate_apple_pass"
-    payload = _build_apple_payload(subject)
+    payload = _build_apple_payload(subject, template=template)
 
     try:
         service_response = requests.post(
